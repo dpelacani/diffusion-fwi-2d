@@ -30,3 +30,7 @@ htmlcov/
 
 # Local environment variables
 .env
+
+# Experiments
+./exps/
+./slurm/
