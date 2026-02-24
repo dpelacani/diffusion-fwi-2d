@@ -16,6 +16,7 @@ from datetime import datetime
 
 CONFIG = {
     "experiment_name": "diffusion_fwi_2d",
+    "work_dir": "./exps/",
     "data_dir": "/scratch_hive/dp4018/data/ultrasound-data/Ultrasound-Vp-axial-models/",
     "true_model": "vp_996782.npy",
     "x_dim": 32,
@@ -39,7 +40,7 @@ if __name__ == "__main__":
 
     # Experiment configuration
     experiment_name = CONFIG["experiment_name"]
-    experiment_dir = f"./exps/{experiment_name}"
+    experiment_dir = f"{CONFIG['work_dir']}{experiment_name}"
     logging_dir = f"{experiment_dir}/logs"
     checkpoint_dir = f"{experiment_dir}/checkpoints"
 
