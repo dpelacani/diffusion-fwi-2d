@@ -33,8 +33,10 @@ def valid(model, criterion, data_loader, forward_diffusion, device, T=1000):
             # Get noisy sample
             xt = forward_diffusion(x0, t, e)
 
-            # Predict noise
-            pred_e = model(xt, t)
+            # Autocast to mixed precision for faster validation and reduced memory usage
+            with torch.cuda.amp.autocast():
+                # Predict noise
+                pred_e = model(xt, t)
 
             # Compute loss
             loss = criterion(pred_e, e)

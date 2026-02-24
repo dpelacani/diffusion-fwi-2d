@@ -35,8 +35,10 @@ def train(model, optimizer, criterion, data_loader, forward_diffusion, device, T
         # Corrupt x0 into xt using forward diffusion process
         xt = forward_diffusion(x0, t, e)
 
-        # Predict the noise using the model
-        pred_e = model(xt, t)
+        # Autocast to mixed precision for faster training and reduced memory usage
+        with torch.cuda.amp.autocast():
+            # Predict the noise using the model
+            pred_e = model(xt, t)
 
         # Compute loss
         loss = criterion(pred_e, e)
