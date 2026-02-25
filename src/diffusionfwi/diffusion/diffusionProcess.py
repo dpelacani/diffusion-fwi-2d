@@ -96,14 +96,14 @@ class DiffusionProcess:
         # the reverse diffusion equation
         return sqrt_recip_alphas * (x - scale*e) + sigma*z
     
-    def sample_diffusion(self, model, data_loader, bs, device):
+    def sample_diffusion(self, model, data_loader, batch_size, device):
         """
         Sample from the diffusion model.
 
         Args:
             model: The diffusion model to sample from.
             data_loader: The data loader to get the shape of the data.
-            bs: The batch size for sampling.
+            batch_size: The batch size for sampling.
             device: The device to run the computations on.
 
         Returns:
@@ -114,7 +114,7 @@ class DiffusionProcess:
         # Randomly sample an xT batch from a normal distribution
         # We will simply refer to xT as x
         sample_shape = next(iter(data_loader)).shape[1:]
-        x = torch.randn((bs, *sample_shape)).to(device)
+        x = torch.randn((batch_size, *sample_shape)).to(device)
         
         # send to the GPU
         x = x.to(device)

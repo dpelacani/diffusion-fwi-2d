@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import torch
 
 # Define the training loop
@@ -20,10 +19,8 @@ def train(model, optimizer, criterion, data_loader, forward_diffusion, device, T
     """
     model.train()
     total_loss = 0.0
-
-    pbar = tqdm(data_loader)
-    
-    for x0 in pbar:
+   
+    for x0 in data_loader:
         x0 = x0.to(device)
 
         # Sample time steps t ∈ [0, T)
@@ -47,8 +44,7 @@ def train(model, optimizer, criterion, data_loader, forward_diffusion, device, T
         loss.backward()
         optimizer.step()
 
-        # Update progress bar and accumulate loss
-        pbar.set_description(f"loss: {loss.item():.4f}")
+        # Accumulate loss for the epoch
         total_loss += loss.item() * x0.size(0)
 
     avg_loss = total_loss / len(data_loader.dataset)

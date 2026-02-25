@@ -6,6 +6,8 @@ import torch
 import matplotlib.pyplot as plt
 import logging
 
+from tqdm import tqdm
+
 from diffusionfwi.models import UNetAttnMoreD
 from diffusionfwi.dataset import build_dataset, get_dataloaders
 from diffusionfwi.utils import *
@@ -20,7 +22,7 @@ CONFIG = {
     "work_dir": "./exps/",
     "data_dir": "/scratch_hive/dp4018/data/ultrasound-data/Ultrasound-Vp-axial-models/",
     "true_model": "vp_996782.npy",
-    "x_dim": 8,
+    "x_dim": 32,
     "batch_size": 16,
     "num_timesteps": 1000,
     "cosine_schedule_s": 0.001,
@@ -32,7 +34,7 @@ CONFIG = {
     "lr": 2e-4,
     "weight_decay": 1e-4,
     "adam_betas": (0.9, 0.98),
-    "num_epochs": 2,
+    "num_epochs": 16,
     "checkpoint_interval": 25,
     "seed": 42,
     "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -45,6 +47,8 @@ if __name__ == "__main__":
 
     # Experiment configuration
     experiment_name = CONFIG["experiment_name"]
+    if os.path.exists(experiment_dir):
+        experiment_name += f"_{CONFIG['timestamp']}"
     experiment_dir = f"{CONFIG['work_dir']}{experiment_name}"
     logging_dir = f"{experiment_dir}/logs"
     checkpoint_dir = f"{experiment_dir}/checkpoints"
@@ -99,7 +103,8 @@ if __name__ == "__main__":
     # Initialize the UNet model
     model = UNetAttnMoreD(**CONFIG["model_params"]).to(device)
     num_params = sum(p.numel() for p in model.parameters())
-    logging.info("Model initialized with %d parameters", num_params)
+    # log the model architecture and number of parameters in scientific notation
+    logging.info("Model initialized with {:2E} parameters".format(num_params))
 
     # Initialise Optimizer and loss function
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"],
@@ -125,17 +130,19 @@ if __name__ == "__main__":
 
     # Train and validate the model
     train_losses, val_losses = [], []
-    for epoch in range(CONFIG["num_epochs"]):
-        logging.info("Epoch %d/%d", epoch + 1, CONFIG["num_epochs"])
-
+    pbar = tqdm(range(CONFIG["num_epochs"]), desc="", total=CONFIG["num_epochs"])
+    for epoch in pbar:
         # Train the model
         train_loss = train(model, optimizer, criterion, train_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
         
         # Evaluate the model
         valid_loss = valid(model, criterion, val_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
 
+        # Add losses to pbar
+        pbar.set_description(f"Train Loss: {train_loss:.4f}, Val Loss: {valid_loss:.4f}")
+
         # Log the losses
-        logging.info("Train Loss: %.4f, Val Loss: %.4f", train_loss, valid_loss)
+        logging.info("Epoch %d/%d", epoch + 1, CONFIG["num_epochs"], " - Train Loss: %.4f, Val Loss: %.4f", train_loss, valid_loss)
         train_losses.append(train_loss)
         val_losses.append(valid_loss)
 
@@ -154,7 +161,7 @@ if __name__ == "__main__":
 
     # EVALUATION & METRICS
     #############################################################################
-    
+
     # Sample one random batch
     samples = pipeline.sample_diffusion(model, test_loader, batch_size=CONFIG["batch_size"], device=device)
     np.save(f"{experiment_dir}/sampled_images.npy", samples.cpu().numpy())
@@ -166,6 +173,7 @@ if __name__ == "__main__":
     # Evaluate loss on test set
     test_loss = valid(model, criterion, test_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
     logging.info("Test Loss: %.4f", test_loss)
+
 
     # # Evaluation metrics
     # rad_model = RadImageNetFeaturesFID(pretrained_model)
@@ -192,5 +200,6 @@ if __name__ == "__main__":
     # logging.info("Evaluation Metrics: %s", metrics_vals)
     # with open(f"{logging_dir}/metrics.json", "w") as f:
     #     json.dump(metrics_vals, f)
+
 
 

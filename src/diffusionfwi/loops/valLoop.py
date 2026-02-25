@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import torch
 
 # Define the validation loop
@@ -41,9 +40,9 @@ def valid(model, criterion, data_loader, forward_diffusion, device, T=1000):
                 # Compute loss
                 loss = criterion(pred_e, e)
 
+            # Accumulate loss for the validation set
             valid_loss += loss.item() * x0.size(0)
 
+    # Compute average validation loss
     avg_valid_loss = valid_loss / len(data_loader.dataset)
-    # clean up GPU memory to prevent out of memory error
-    torch.cuda.empty_cache()
     return avg_valid_loss
