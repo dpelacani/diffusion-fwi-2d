@@ -36,3 +36,5 @@ exps/
 slurm/
 slurm*.err
 slurm*.out
+mosaic-workspace/
+stride-output.log
