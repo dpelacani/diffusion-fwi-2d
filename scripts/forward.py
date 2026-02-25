@@ -1,11 +1,15 @@
 import os
-import sys
-import numpy as np
-
 from stride import *
-from stride.utils import wavelets, fetch
+from stride.utils import wavelets
 
 from diffusionfwi.fwi.utils import npy2h5
+
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.handlers.clear()  # Clear any existing handlers
+
 
 
 async def main(runtime):
@@ -28,7 +32,6 @@ async def main(runtime):
     name = true_model.split(".")[0].upper()
     experiment_dir = f"./exps/forward/{name}"
 
-
     # Create h5 from npy true model
     if not os.path.isfile(f"{experiment_dir}/{name}.h5"):
         npy2h5(
@@ -42,7 +45,7 @@ async def main(runtime):
             absorbing=absorbing,
             spacing=spacing,
         )  # After this a file called {name}.h5 will be created in the experiment directory
-    print(f"Created HDF5 file for true model at {experiment_dir}/{name}.h5")
+    logger.info(f"Created HDF5 file for true model at {experiment_dir}/{name}.h5")
 
     # Create problem -  this is the base of how Stride operates
     problem = Problem(
@@ -102,17 +105,19 @@ async def main(runtime):
     # Run
     # this will generate the simulated observed data and save it to a file
     await forward(problem, pde, vp, kernel="OT4", platform="nvidia-acc")
-    for shot in problem.acquisitions.shots:
-        data = shot.observed.data
-        # Add noise to the observed data
-        # 0.9 is the maximum amplitude of the wavelet, we set it as the standard deviation of the noise
-        # to avoid the noise being too large, we only use 1% of the noise
-        noise = 0.01 * np.random.normal(loc=0.0, scale=0.9, size=data.shape)
-        shot.observed.data[:] = shot.observed.data + noise
-        shot.append_observed(path=problem.output_folder, project_name=problem.name)
 
-    problem.dump()
+    # Optional - we can add noise to the observed data to make the problem more realistic
+    # 0.9 is the maximum amplitude of the wavelet, we set it as the standard deviation of the noise
+    # to avoid the noise being too large, we only use 1% of the noise
+    # for shot in problem.acquisitions.shots:
+    #     data = shot.observed.data
+    #     noise = 0.01 * np.random.normal(loc=0.0, scale=0.9, size=data.shape)
+    #     shot.observed.data[:] = shot.observed.data #+ noise
+    #     shot.append_observed(path=problem.output_folder, project_name=problem.name)
+
+
+    problem.acquisitions.dump(filename=f"{experiment_dir}/{name}-Acquisitions.h5")
 
 
 if __name__ == "__main__":
-    mosaic.run(main)
+    mosaic.run(main, log_level="perf")
