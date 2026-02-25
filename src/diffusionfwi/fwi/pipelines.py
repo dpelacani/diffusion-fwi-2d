@@ -1,14 +1,14 @@
-import io
-import logging
-from typing import Union, Optional, Any, Tuple
-
 import torch
 import numpy as np
+import logging
+
 from tqdm import tqdm
-
 from torchvision import transforms
-from ..dataset.buildDataset import AcousticNormalization, ReverseAcousticNormalization
+from typing import Union, Optional, Tuple
+from torchvision.transforms import InterpolationMode
 
+from ..diffusion.diffusionProcess import DiffusionProcess
+from ..dataset.buildDataset import AcousticNormalization, ReverseAcousticNormalization
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -21,7 +21,7 @@ def log_array_stats(arr: Union[torch.Tensor, np.ndarray], logger: Optional[loggi
     if isinstance(arr, torch.Tensor):
         arr = arr.cpu().numpy()
     logger.info(
-        f"Array stats - shape: {arr.shape}, dtype: {arr.dtype}, "
+        f"\t Array stats - shape: {arr.shape}, dtype: {arr.dtype}, "
         f"min: {arr.min():.4f}, max: {arr.max():.4f}, mean: {arr.mean():.4f}, std: {arr.std():.4f}"
     )
 
@@ -76,12 +76,14 @@ class DiffusionFWIPipeline:
     def __init__(
         self,
         diffusion_model: Optional[torch.nn.Module],
+        diffusion_process: Optional[DiffusionProcess],
         data_pipeline: Optional[DataProcessingPipeline],
         update_fn: Optional[callable] = None,
         device: Optional[torch.device] = "cpu",
     ) -> None:
 
         self.diffusion_model = diffusion_model
+        self.diffusion_process = diffusion_process
         self.update_fn = update_fn or self._update_fn
         self.data_pipeline = data_pipeline
         self.device = device
@@ -99,7 +101,7 @@ class DiffusionFWIPipeline:
         """
         device = self.device
 
-        logger.info("DiffusionFWIPipeline.run starting.")
+        logger.info("(diffusionfwi) DiffusionFWIPipeline.run starting.")
 
         # --- basic type handling ---
         is_tensor = isinstance(volume, torch.Tensor)
@@ -110,26 +112,28 @@ class DiffusionFWIPipeline:
         original_vol = volume.clone()
 
         if verbose:
-            logger.info("Volume before pipeline.")
+            logger.info("(diffusionfwi) Volume before pipeline:")
             log_array_stats(volume)
+
+        # Ensure volume has batch and channel dims for processing (N, C, H, W)
+        while volume.ndim < 4:
+            volume = volume.unsqueeze(0)
 
         # Forward data preprocessing
         if self.data_pipeline is not None:
+
             volume = self.data_pipeline.process_forward(volume)
             if volume.ndim != 4:
                 logger.error(
-                    f"Volume after forward pipeline has wrong dims: {volume.shape},"
+                    f"(diffusionfwi) Volume after forward pipeline has wrong dims: {volume.shape},"
                     " reshaping now - could cause unexpected behaviour."
                 )
-            while volume.ndim < 4:
-                volume = volume.unsqueeze(0)
 
         # Move to device for diffusion processing
         volume = volume.to(device)
-        volume_input = volume.clone()
 
         if verbose:
-            logger.info("Volume after data preprocessing.")
+            logger.info("(diffusionfwi) Volume after data preprocessing.")
             log_array_stats(volume)
 
 
@@ -145,7 +149,7 @@ class DiffusionFWIPipeline:
         if self.data_pipeline is not None:
             volume = self.data_pipeline.process_inverse(volume)
             if verbose:
-                logger.info("Reverse preprocessed decoded, denoised volume.")
+                logger.info("(diffusionfwi) Reverse preprocessed decoded, denoised volume.")
                 log_array_stats(volume, logger=logger)
 
         # Remove extra dims added earlier, if any
@@ -156,14 +160,12 @@ class DiffusionFWIPipeline:
         volume = self.update_fn(volume, original_vol, **(update_kwargs or {}))
 
         if verbose:
-            logger.info("Blended volume.")
+            logger.info("(diffusionfwi) Final blended volume.")
             log_array_stats(volume)
 
         return volume if is_tensor else volume.cpu().numpy()
 
-    # --------------------------------------------------------------------- #
-    # Local inference (shared between pipeline & API server)
-    # --------------------------------------------------------------------- #
+
     def _denoise_local(
         self,
         volume: torch.Tensor,
@@ -187,7 +189,7 @@ class DiffusionFWIPipeline:
         t_val = self.diffusion_process.timesteps[t_idx].unsqueeze(0).to(device)
 
         if verbose:
-            logger.info(f"Picked nearest available timestep value: {t_val}")
+            logger.info(f"(diffusionfwi) Picked nearest available timestep value: {t_val}")
 
         # --------------- Corrupt with noise ---------------
         if random_seed is not None:
@@ -199,7 +201,7 @@ class DiffusionFWIPipeline:
             noise = torch.randn_like(volume, device=device)
 
         if verbose:
-            logger.info(f"Generated noise, shape: {noise.shape}")
+            logger.info(f"(diffusionfwi) Generated noise, shape: {noise.shape}")
 
         volume = self.diffusion_process.forward_diffusion(volume, t_val, noise)
 
@@ -207,10 +209,10 @@ class DiffusionFWIPipeline:
         volume = self._sample_from_start_time(volume, t_val, device=device)
 
         if verbose:
-            logger.info("Volume post sampling.")
+            logger.info("(diffusionfwi) Volume post sampling.")
             log_array_stats(volume)
 
-        return decoded
+        return volume
 
 
     @torch.no_grad()
@@ -233,25 +235,19 @@ class DiffusionFWIPipeline:
             self.diffusion_process.timesteps <= t_start.item()
         ].to(device)
 
-        # prepare the list of next timesteps for scheduler stepping
-        all_next = torch.cat(
-            (timesteps[1:], torch.tensor([0], dtype=timesteps.dtype, device=device))
-        )
         n_steps = len(timesteps)
-        assert n_steps == len(all_next)
 
         with torch.inference_mode():
-            for idx in tqdm(range(n_steps), desc="Diffusion Sampling"):
+            for idx in tqdm(reversed(range(n_steps)), desc="Diffusion Sampling"):
                 t = timesteps[idx].to(device)
-                next_t = all_next[idx].to(device)
 
-                if t.item() <= 0:
+                if t.item() < 0:
                     break  # reached final timestep
 
                 batch = volume.shape[0]
                 model_t = t.unsqueeze(0).expand(batch).to(volume.device)
 
-                e_pred = self.diffusion_model(volume, timesteps=model_t)
+                e_pred = self.diffusion_model(volume, t=model_t)
 
                 volume = self.diffusion_process.reverse_diffusion(volume, model_t, e_pred, torch.randn_like(volume))
 
@@ -271,6 +267,11 @@ class DiffusionFWIPipeline:
 
         if mask is None:
             mask = torch.ones_like(generated_volume)
+
+        # Ensure mask and original_volume are on the same device as generated_volume 
+        mask = mask.to(generated_volume.device)
+        original_volume = original_volume.to(generated_volume.device)
+
         return (1 - alpha * mask) * original_volume + alpha * mask * generated_volume
 
 
