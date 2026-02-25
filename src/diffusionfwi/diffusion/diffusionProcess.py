@@ -22,7 +22,7 @@ class DiffusionProcess:
         """
         Set the beta and alpha variables for the diffusion process. So we can use them in the forward and reverse diffusion processes.
         """
-        self.timesteps = np.arange(0, self.T + 1)
+        self.timesteps = torch.arange(0, self.T + 1)
         self.betas = self.cosine_beta_schedule().to(self.device)
         self.alphas = 1.0 - self.betas
         self.alphas_bar = torch.cumprod(self.alphas, dim=0)
@@ -96,6 +96,8 @@ class DiffusionProcess:
         """
         # calculate the variables needed for the reverse diffusion
         sigma = self.combine_timestep(torch.sqrt(self.betas), t, x.device)
+        if t == 0:
+            sigma = 0  # no noise at the final step
         sqrt_recip_alphas = self.combine_timestep(
             torch.sqrt(1.0 / self.alphas), t, x.device
         )
