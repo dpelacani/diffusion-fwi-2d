@@ -242,6 +242,7 @@ async def main(runtime):
     diffusion_model_path = os.path.join(absolute_path, 'diffusion model/model_added_res.pt')
     diffusion_model.load_state_dict(torch.load(diffusion_model_path))
     diffusion_model.eval()  # Set to evaluation mode
+    
     # initialise diffusion process
     T = 1000
     diffusion = DiffusionProcess(device, T)
@@ -311,7 +312,6 @@ async def main(runtime):
                 updated_vp = diffusion_updater.update_vp(vp, current_iter)
                 # set the updated vp back to the optimiser variable
                 optimiser.variable.data[:] = updated_vp.data
-
 
             # save vp to disk after this iteration
             optimiser.dump(path=problem.output_folder,
