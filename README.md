@@ -52,6 +52,6 @@ Scripts in the `scripts` folder:
   - `fwi/`: FWI operators, pipelines, and utilities (visualisation, metrics, etc.).
   - `loops/`: Training and validation loops.
   - `models/`: Model architectures (UNet, Attention, etc.).
-  - `utils/`: Metrics, visualization, and helper functions.
+  - `utils/`: Diffusion model metrics, visualization, and helper functions.
 - `requirements.txt`: Python dependencies.
 - `environment.yml`: Conda environment specification.
