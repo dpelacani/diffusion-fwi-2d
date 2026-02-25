@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-import logging
-
 
 class UltrasoundDataset(Dataset):
     """
