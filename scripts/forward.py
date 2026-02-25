@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 
 from stride import *
@@ -22,10 +23,13 @@ async def main(runtime):
 
     time = Time(start=start, step=step, num=num)
 
-    # Create h5 from npy true model
+
     true_model = "vp_996782.npy"
     name = true_model.split(".")[0].upper()
     experiment_dir = f"./exps/forward/{name}"
+
+
+    # Create h5 from npy true model
     if not os.path.isfile(f"{experiment_dir}/{name}.h5"):
         npy2h5(
             path=f"/scratch_hive/dp4018/data/ultrasound-data/Ultrasound-Vp-axial-models/{true_model}",
@@ -38,6 +42,7 @@ async def main(runtime):
             absorbing=absorbing,
             spacing=spacing,
         )  # After this a file called {name}.h5 will be created in the experiment directory
+    print(f"Created HDF5 file for true model at {experiment_dir}/{name}.h5")
 
     # Create problem -  this is the base of how Stride operates
     problem = Problem(
@@ -52,7 +57,7 @@ async def main(runtime):
     # this is the speed of sound of the region of interest
     # vp contains a Numpy array with the velocity for every point on the grid
     vp = ScalarField(name="vp", grid=problem.grid)
-    vp.load(f"{name}.h5")
+    vp.load(f"{experiment_dir}/{name}.h5")
 
     problem.medium.add(vp)
 

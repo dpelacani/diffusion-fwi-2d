@@ -56,7 +56,7 @@ class DiffusionVpOperator(Operator):
         # Instantiate diffusion FWI pipeline
         self.pipeline = DiffusionFWIPipeline(
             diffusion_model=self.diffusion_model,
-            data_pipeline=self.preproc
+            data_pipeline=self.preproc,
             update_fn=update_fn,
             device=self.device,
         )

@@ -260,12 +260,12 @@ class DiffusionFWIPipeline:
         return volume
 
 
-   def _update_fn(
+    def _update_fn(
         self,
         generated_volume: Union[torch.Tensor, np.ndarray],
         original_volume: Union[torch.Tensor, np.ndarray],
         **kwargs,
-    ) -> Union[torch.Tensor, np.ndarray]:
+        ) -> Union[torch.Tensor, np.ndarray]:
         mask = kwargs.get("mask", None)
         alpha = kwargs.get("alpha", 1.0)
 

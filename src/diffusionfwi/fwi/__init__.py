@@ -1,3 +1,3 @@
 from .operator import *
-from .pipeline import *
+from .pipelines import *
 from .utils import *
