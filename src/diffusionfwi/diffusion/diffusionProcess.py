@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from tqdm import tqdm
 
 class DiffusionProcess:
     def __init__(self, device, T=1000, s=0.008):
@@ -124,7 +125,7 @@ class DiffusionProcess:
         with torch.no_grad():
         
             # Loop over time from T to 0
-            for t in reversed(range(0,self.T)):
+            for t in tqdm(reversed(range(0,self.T)), desc="Sampling Steps", total=self.T):
         
                 # sample z from a normal distribution if condition met
                 if t > 0:

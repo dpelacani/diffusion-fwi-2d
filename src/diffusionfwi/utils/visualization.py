@@ -65,7 +65,7 @@ def plot_batch(batch, nrow=4, title=None, save_path=None, cmap='terrain', vmin=N
     ncols = batch.size(0) // nrow + (batch.size(0) % nrow > 0)
     grid = make_grid(batch.cpu(), nrow=nrow, normalize=True)
     plt.figure(figsize=(5 * nrow, 5 * ncols))
-    plt.imshow(grid.permute(1, 2, 0), cmap=cmap, vmin=vmin, vmax=vmax)
+    plt.imshow(grid[0], cmap=cmap, vmin=vmin, vmax=vmax)
     plt.axis('off')
     if title:
         plt.title(title)

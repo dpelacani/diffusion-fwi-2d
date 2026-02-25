@@ -34,12 +34,13 @@ def valid(model, criterion, data_loader, forward_diffusion, device, T=1000):
             xt = forward_diffusion(x0, t, e)
 
             # Autocast to mixed precision for faster validation and reduced memory usage
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 # Predict noise
                 pred_e = model(xt, t)
 
-            # Compute loss
-            loss = criterion(pred_e, e)
+                # Compute loss
+                loss = criterion(pred_e, e)
+
             valid_loss += loss.item() * x0.size(0)
 
     avg_valid_loss = valid_loss / len(data_loader.dataset)

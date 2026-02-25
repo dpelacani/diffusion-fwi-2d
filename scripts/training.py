@@ -6,11 +6,12 @@ import torch
 import matplotlib.pyplot as plt
 import logging
 
-from src.diffusionModel.models import UNetAttnMoreD
-from src.diffusionModel.dataset import build_dataset, get_dataloaders
-from src.diffusionModel.utils import *
-from src.diffusionModel.diffusion import DiffusionProcess
-from src.diffusionModel.loops import train, valid
+from diffusionfwi.models import UNetAttnMoreD
+from diffusionfwi.dataset import build_dataset, get_dataloaders
+from diffusionfwi.utils import *
+from diffusionfwi.diffusion import DiffusionProcess
+from diffusionfwi.loops import train, valid
+from diffusionfwi.utils import plot_batch, plot_losses
 
 from datetime import datetime
 
@@ -19,11 +20,15 @@ CONFIG = {
     "work_dir": "./exps/",
     "data_dir": "/scratch_hive/dp4018/data/ultrasound-data/Ultrasound-Vp-axial-models/",
     "true_model": "vp_996782.npy",
-    "x_dim": 32,
+    "x_dim": 8,
     "batch_size": 16,
     "num_timesteps": 1000,
     "cosine_schedule_s": 0.001,
-    "time_emb_dim": 256,
+    "model_params":{
+        "time_emb_dim": 256,
+        "in_channels": 1,
+        "out_channels": 1,
+    },
     "lr": 2e-4,
     "weight_decay": 1e-4,
     "adam_betas": (0.9, 0.98),
@@ -49,12 +54,12 @@ if __name__ == "__main__":
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Set up logging
-    logging.basicConfig(filename=f"{logging_dir}/training.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        filename=f"{logging_dir}/training.log",
+        filemode='w',
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s")
     logging.info("Starting experiment: %s", experiment_name)
-
-    # Dump configuration to a json file
-    with open(f"{experiment_dir}/config.json", "w") as f:
-        json.dump(CONFIG, f, indent=4)
 
     # Set random seed for reproducibility
     set_seed(CONFIG["seed"])
@@ -81,17 +86,18 @@ if __name__ == "__main__":
     pipeline = DiffusionProcess(device=device, T=CONFIG["num_timesteps"], s=CONFIG["cosine_schedule_s"])
 
     # Plot batch of samples
-    plot_batch(train_dataset[:16], nrow=8, title="Batch of Training Samples", save_path=f"{logging_dir}/train_samples.png")
+    batch = next(iter(train_loader))[:16]
+    plot_batch(batch, nrow=8, title="Batch of Training Samples", save_path=f"{logging_dir}/train_samples.png")
 
     # Plot batch of corrupted samples at different timesteps
     random_Ts = random.sample(range(CONFIG["num_timesteps"]), len(train_dataset))
-    t = torch.randint(0, CONFIG["num_timesteps"], (train_dataset.size(0),), dtype=torch.long).to(device)
-    e = torch.randn_like(train_dataset[0])
-    xt = forward_diffusion(train_dataset, t, e)
+    t = torch.randint(0, CONFIG["num_timesteps"], (batch.size(0),), dtype=torch.long).to(device)
+    e = torch.randn_like(batch[0])
+    xt = pipeline.forward_diffusion(batch, t, e)
     plot_batch(xt[:16], nrow=8, title="Batch of Corrupted Samples at Random Timesteps", save_path=f"{logging_dir}/corrupted_samples.png")
 
     # Initialize the UNet model
-    model = UNetAttnMoreD(in_channels=1, out_channels=1, time_emb_dim=CONFIG["time_emb_dim"]).to(device)
+    model = UNetAttnMoreD(**CONFIG["model_params"]).to(device)
     num_params = sum(p.numel() for p in model.parameters())
     logging.info("Model initialized with %d parameters", num_params)
 
@@ -104,13 +110,14 @@ if __name__ == "__main__":
     # Add model, optimiser, and criterion to the config json file
     CONFIG["model"] = model.__class__.__name__
     CONFIG["num_params"] = num_params
-    CONFIG["model_config"] = model.__dict__
+    CONFIG["model_config"] = {"type": str(model.__class__)} 
     CONFIG["optimizer"] = optimizer.__class__.__name__
-    CONFIG["optimizer_config"] = optimizer.__dict__
+    CONFIG["optimizer_config"] = optimizer.defaults
     CONFIG["criterion"] = criterion.__class__.__name__
-    CONFIG["criterion_config"] = criterion.__dict__
+
+    # Save the config to a json file
     with open(f"{experiment_dir}/config.json", "w") as f:
-        json.dump(CONFIG, f, indent=4)
+        json.dump(CONFIG, f, indent=4, default=str, sort_keys=True)
 
 
     # TRAINING
@@ -144,8 +151,10 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), checkpoint_path)
             logging.info("Saved model checkpoint at: %s", checkpoint_path)
 
+
     # EVALUATION & METRICS
     #############################################################################
+    
     # Sample one random batch
     samples = pipeline.sample_diffusion(model, test_loader, batch_size=CONFIG["batch_size"], device=device)
     np.save(f"{experiment_dir}/sampled_images.npy", samples.cpu().numpy())
