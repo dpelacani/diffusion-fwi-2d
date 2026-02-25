@@ -4,6 +4,7 @@ import datetime
 
 from stride import *
 
+
 async def main(runtime):
     # Create the grid
     # specify the discretisation to be used
@@ -21,12 +22,14 @@ async def main(runtime):
     time = Time(start=start, step=step, num=num)
 
     # Flag to decide whether to use the diffusion model in the FWI process or not
-    USE_DIFFUSION_FWI = False  
+    USE_DIFFUSION_FWI = False
 
     # Model name
     name = "VP_996782"
     input_dir = f"./exps/forward/{name}"
-    output_dir = f"./exps/inverse/{name}" + ("_diffusion_fwi" if USE_DIFFUSION_FWI else "") 
+    output_dir = f"./exps/inverse/{name}" + (
+        "_diffusion_fwi" if USE_DIFFUSION_FWI else ""
+    )
     if os.path.exists(output_dir):
         output_dir += "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(output_dir, exist_ok=True)
@@ -108,7 +111,6 @@ async def main(runtime):
     # num_blocks = len(max_freqs)
     # block_iters = [1]
 
-
     ########################################################
     ############# Diffusion FWI Pipeline Setup #############
     ########################################################
@@ -128,18 +130,37 @@ async def main(runtime):
             out_channels=1,
             time_emb_dim=256,
         )
-        ckpt_path = "/scratch_hive/dp4018/scripts/diffusion-fwi-2d/exps/diffusion/" \
-                    "diffusion_fwi_2d/checkpoints/model_epoch_16.pth"
-        
+        ckpt_path = (
+            "/scratch_hive/dp4018/scripts/diffusion-fwi-2d/exps/diffusion/"
+            "diffusion_fwi_2d/checkpoints/model_epoch_16.pth"
+        )
+
         diffusion_model.load_state_dict(
-            torch.load(ckpt_path, map_location="cpu") # always force loading on CPU, to avoid GPU memory issues
+            torch.load(
+                ckpt_path, map_location="cpu"
+            )  # always force loading on CPU, to avoid GPU memory issues
         )
         diffusion_model.eval()
 
         scheduling_args = {
-            "iters_to_run": [40, 64, 88, 99], # run diffusion roughly at the end of every block
-            "t_starts": [900, 700, 500, 300], # reduce the strength of diffusion at every block
-            "alphas": [0.3, 0.2, 0.15, 0.1],  # reduce the strength of blending at every block
+            "iters_to_run": [
+                40,
+                64,
+                88,
+                99,
+            ],  # run diffusion roughly at the end of every block
+            "t_starts": [
+                900,
+                700,
+                500,
+                300,
+            ],  # reduce the strength of diffusion at every block
+            "alphas": [
+                0.3,
+                0.2,
+                0.15,
+                0.1,
+            ],  # reduce the strength of blending at every block
         }
 
         # ###### DEBUGGING
@@ -152,14 +173,16 @@ async def main(runtime):
         process_model.append(
             "diffusion",
             DiffusionVpOperator(
-                input_dim=32,   # the dimension of the velocity model volume that will be fed into the diffusion model (after downsampling)
+                input_dim=32,  # the dimension of the velocity model volume that will be fed into the diffusion model (after downsampling)
                 original_dim=shape,  # the original dimension of the velocity model volume (before any downsampling)
                 diffusion_model=diffusion_model,  # the diffusion model to use in the operator
                 diffusion_process=diffusion_process,  # the diffusion process to use in the operator
                 mask=None,  # a blending mask to be passed to the update function, if needed
                 update_fn=None,  # a function to combine the original and generated volumes
                 scheduling_args=scheduling_args,  # arguments for the diffusion-fwi scheduling
-                total_iterations=sum(block_iters),  # total number of iterations for the whole FWI run
+                total_iterations=sum(
+                    block_iters
+                ),  # total number of iterations for the whole FWI run
                 device=device,
             ),
         )
@@ -181,7 +204,7 @@ async def main(runtime):
     num_shots_per_iter = 32
 
     # ###### DEBUGGING
-    # num_shots_per_iter = 2 
+    # num_shots_per_iter = 2
 
     for i, (block, freq) in enumerate(optimisation_loop.blocks(num_blocks, max_freqs)):
         # prepare some initial configuration for the block

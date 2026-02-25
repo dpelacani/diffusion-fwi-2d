@@ -11,7 +11,6 @@ logger.setLevel(logging.INFO)
 logger.handlers.clear()  # Clear any existing handlers
 
 
-
 async def main(runtime):
     # Create the spatio-temporal grid
     shape = (320, 256)
@@ -26,7 +25,6 @@ async def main(runtime):
     num = 2500
 
     time = Time(start=start, step=step, num=num)
-
 
     true_model = "vp_996782.npy"
     name = true_model.split(".")[0].upper()
@@ -114,7 +112,6 @@ async def main(runtime):
     #     noise = 0.01 * np.random.normal(loc=0.0, scale=0.9, size=data.shape)
     #     shot.observed.data[:] = shot.observed.data #+ noise
     #     shot.append_observed(path=problem.output_folder, project_name=problem.name)
-
 
     problem.acquisitions.dump(filename=f"{experiment_dir}/{name}-Acquisitions.h5")
 
