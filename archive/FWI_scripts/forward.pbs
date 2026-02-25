@@ -25,3 +25,7 @@ export DEVITO_LANGUAGE=openacc
 export DEVITO_PLATFORM=nvidiaX
 
 mrun -l python forward.py
+
+
+
+

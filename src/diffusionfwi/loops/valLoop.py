@@ -1,5 +1,6 @@
 import torch
 
+
 # Define the validation loop
 def valid(model, criterion, data_loader, forward_diffusion, device, T=1000):
     """

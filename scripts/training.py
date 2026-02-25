@@ -19,14 +19,14 @@ from datetime import datetime
 
 CONFIG = {
     "experiment_name": "diffusion_fwi_2d",
-    "work_dir": "./exps/",
+    "work_dir": "./exps/diffusion/",
     "data_dir": "/scratch_hive/dp4018/data/ultrasound-data/Ultrasound-Vp-axial-models/",
     "true_model": "vp_996782.npy",
     "x_dim": 32,
     "batch_size": 16,
     "num_timesteps": 1000,
     "cosine_schedule_s": 0.001,
-    "model_params":{
+    "model_params": {
         "time_emb_dim": 256,
         "in_channels": 1,
         "out_channels": 1,
@@ -37,7 +37,7 @@ CONFIG = {
     "num_epochs": 16,
     "checkpoint_interval": 25,
     "seed": 42,
-    "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
 }
 
 if __name__ == "__main__":
@@ -47,9 +47,14 @@ if __name__ == "__main__":
 
     # Experiment configuration
     experiment_name = CONFIG["experiment_name"]
-    if os.path.exists(experiment_dir):
-        experiment_name += f"_{CONFIG['timestamp']}"
     experiment_dir = f"{CONFIG['work_dir']}{experiment_name}"
+
+    # If the experiment directory already exists, add a timestamp to the experiment name to avoid overwriting previous experiments
+    if os.path.exists(experiment_dir):  #
+        experiment_name += f"_{CONFIG['timestamp']}"
+        experiment_dir = f"{CONFIG['work_dir']}{experiment_name}"
+
+    # Directories for logging and checkpoints
     logging_dir = f"{experiment_dir}/logs"
     checkpoint_dir = f"{experiment_dir}/checkpoints"
 
@@ -60,9 +65,10 @@ if __name__ == "__main__":
     # Set up logging
     logging.basicConfig(
         filename=f"{logging_dir}/training.log",
-        filemode='w',
+        filemode="w",
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s")
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
     logging.info("Starting experiment: %s", experiment_name)
 
     # Set random seed for reproducibility
@@ -72,7 +78,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info("Using device: %s", device)
 
-
     # TRAINING SETUP
     #############################################################################
 
@@ -80,25 +85,43 @@ if __name__ == "__main__":
     x_dim = CONFIG["x_dim"]
     true_model = CONFIG["true_model"]
     data_dir = CONFIG["data_dir"]
-    train_dataset, val_dataset, test_dataset = build_dataset(data_dir, true_model=true_model, x_dim=x_dim)
+    train_dataset, val_dataset, test_dataset = build_dataset(
+        data_dir, true_model=true_model, x_dim=x_dim
+    )
 
     # Build dataloaders
     batch_size = CONFIG["batch_size"]
-    train_loader, val_loader, test_loader = get_dataloaders(train_dataset, val_dataset, test_dataset, batch_size=batch_size)
+    train_loader, val_loader, test_loader = get_dataloaders(
+        train_dataset, val_dataset, test_dataset, batch_size=batch_size
+    )
 
     # Initialize model and diffusion process
-    pipeline = DiffusionProcess(device=device, T=CONFIG["num_timesteps"], s=CONFIG["cosine_schedule_s"])
+    pipeline = DiffusionProcess(
+        device=device, T=CONFIG["num_timesteps"], s=CONFIG["cosine_schedule_s"]
+    )
 
     # Plot batch of samples
     batch = next(iter(train_loader))[:16]
-    plot_batch(batch, nrow=8, title="Batch of Training Samples", save_path=f"{logging_dir}/train_samples.png")
+    plot_batch(
+        batch,
+        nrow=8,
+        title="Batch of Training Samples",
+        save_path=f"{logging_dir}/samples_train.png",
+    )
 
     # Plot batch of corrupted samples at different timesteps
     random_Ts = random.sample(range(CONFIG["num_timesteps"]), len(train_dataset))
-    t = torch.randint(0, CONFIG["num_timesteps"], (batch.size(0),), dtype=torch.long).to(device)
+    t = torch.randint(
+        0, CONFIG["num_timesteps"], (batch.size(0),), dtype=torch.long
+    ).to(device)
     e = torch.randn_like(batch[0])
     xt = pipeline.forward_diffusion(batch, t, e)
-    plot_batch(xt[:16], nrow=8, title="Batch of Corrupted Samples at Random Timesteps", save_path=f"{logging_dir}/corrupted_samples.png")
+    plot_batch(
+        xt[:16],
+        nrow=8,
+        title="Batch of Corrupted Samples at Random Timesteps",
+        save_path=f"{logging_dir}/samples_corrupted.png",
+    )
 
     # Initialize the UNet model
     model = UNetAttnMoreD(**CONFIG["model_params"]).to(device)
@@ -107,15 +130,18 @@ if __name__ == "__main__":
     logging.info("Model initialized with {:2E} parameters".format(num_params))
 
     # Initialise Optimizer and loss function
-    optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"],
-        betas=CONFIG["adam_betas"]
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=CONFIG["lr"],
+        weight_decay=CONFIG["weight_decay"],
+        betas=CONFIG["adam_betas"],
     )
     criterion = torch.nn.MSELoss()
 
     # Add model, optimiser, and criterion to the config json file
     CONFIG["model"] = model.__class__.__name__
     CONFIG["num_params"] = num_params
-    CONFIG["model_config"] = {"type": str(model.__class__)} 
+    CONFIG["model_config"] = {"type": str(model.__class__)}
     CONFIG["optimizer"] = optimizer.__class__.__name__
     CONFIG["optimizer_config"] = optimizer.defaults
     CONFIG["criterion"] = criterion.__class__.__name__
@@ -123,7 +149,6 @@ if __name__ == "__main__":
     # Save the config to a json file
     with open(f"{experiment_dir}/config.json", "w") as f:
         json.dump(CONFIG, f, indent=4, default=str, sort_keys=True)
-
 
     # TRAINING
     #############################################################################
@@ -133,16 +158,39 @@ if __name__ == "__main__":
     pbar = tqdm(range(CONFIG["num_epochs"]), desc="", total=CONFIG["num_epochs"])
     for epoch in pbar:
         # Train the model
-        train_loss = train(model, optimizer, criterion, train_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
-        
+        train_loss = train(
+            model,
+            optimizer,
+            criterion,
+            train_loader,
+            pipeline.forward_diffusion,
+            device,
+            T=CONFIG["num_timesteps"],
+        )
+
         # Evaluate the model
-        valid_loss = valid(model, criterion, val_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
+        valid_loss = valid(
+            model,
+            criterion,
+            val_loader,
+            pipeline.forward_diffusion,
+            device,
+            T=CONFIG["num_timesteps"],
+        )
 
         # Add losses to pbar
-        pbar.set_description(f"Train Loss: {train_loss:.4f}, Val Loss: {valid_loss:.4f}")
+        pbar.set_description(
+            f"Train Loss: {train_loss:.4f}, Val Loss: {valid_loss:.4f}"
+        )
 
         # Log the losses
-        logging.info("Epoch %d/%d", epoch + 1, CONFIG["num_epochs"], " - Train Loss: %.4f, Val Loss: %.4f", train_loss, valid_loss)
+        logging.info(
+            "Epoch %d/%d - Train Loss: %.4f, Val Loss: %.4f",
+            epoch + 1,
+            CONFIG["num_epochs"],
+            train_loss,
+            valid_loss,
+        )
         train_losses.append(train_loss)
         val_losses.append(valid_loss)
 
@@ -151,29 +199,42 @@ if __name__ == "__main__":
             json.dump({"train_losses": train_losses, "val_losses": val_losses}, f)
         plot_losses(train_losses, val_losses, save_path=f"{logging_dir}/loss_plot.png")
 
-
         # Save model checkpoint
-        if (epoch + 1) % CONFIG["checkpoint_interval"] == 0 or (epoch + 1) == CONFIG["num_epochs"]:
+        if (epoch + 1) % CONFIG["checkpoint_interval"] == 0 or (epoch + 1) == CONFIG[
+            "num_epochs"
+        ]:
             checkpoint_path = f"{checkpoint_dir}/model_epoch_{epoch + 1}.pth"
             torch.save(model.state_dict(), checkpoint_path)
             logging.info("Saved model checkpoint at: %s", checkpoint_path)
-
 
     # EVALUATION & METRICS
     #############################################################################
 
     # Sample one random batch
-    samples = pipeline.sample_diffusion(model, test_loader, batch_size=CONFIG["batch_size"], device=device)
-    np.save(f"{experiment_dir}/sampled_images.npy", samples.cpu().numpy())
-    logging.info("Saved sampled images at: %s", f"{experiment_dir}/sampled_images.npy")
+    samples = pipeline.sample_diffusion(
+        model, test_loader, batch_size=CONFIG["batch_size"], device=device
+    )
+    np.save(f"{logging_dir}/samples_gen.npy", samples.cpu().numpy())
+    logging.info("Saved sampled images at: %s", f"{logging_dir}/samples_gen.npy")
 
     # Plot samples
-    plot_batch(samples[:16], nrow=8, title="Sampled Images", save_path=f"{logging_dir}/sampled_images.png")
+    plot_batch(
+        samples[:16],
+        nrow=8,
+        title="Sampled Images",
+        save_path=f"{logging_dir}/samples_gen.png",
+    )
 
     # Evaluate loss on test set
-    test_loss = valid(model, criterion, test_loader, pipeline.forward_diffusion, device, T=CONFIG["num_timesteps"])
+    test_loss = valid(
+        model,
+        criterion,
+        test_loader,
+        pipeline.forward_diffusion,
+        device,
+        T=CONFIG["num_timesteps"],
+    )
     logging.info("Test Loss: %.4f", test_loss)
-
 
     # # Evaluation metrics
     # rad_model = RadImageNetFeaturesFID(pretrained_model)
@@ -200,6 +261,3 @@ if __name__ == "__main__":
     # logging.info("Evaluation Metrics: %s", metrics_vals)
     # with open(f"{logging_dir}/metrics.json", "w") as f:
     #     json.dump(metrics_vals, f)
-
-
-

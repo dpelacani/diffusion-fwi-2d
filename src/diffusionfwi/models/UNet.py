@@ -4,11 +4,12 @@ from .Attention import AttentionBlock
 from .TimeEmbedding import TimeEmbedding
 from .UNetBlocks import ConvBlock, Encoder, Decoder
 
+
 class SimpleUNet(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(SimpleUNet, self).__init__()
         self.time_emb = TimeEmbedding(time_emb_dim)
-        
+
         # Encoder
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
@@ -18,19 +19,19 @@ class SimpleUNet(nn.Module):
         # Bottleneck
         self.bottleneck = ConvBlock(512, 1024, time_emb_dim)
         self.bottleneck2 = ConvBlock(1024, 1024, time_emb_dim)
-        
+
         # Decoder
         self.dec1 = Decoder(1024, 512, time_emb_dim)
         self.dec2 = Decoder(512, 256, time_emb_dim)
         self.dec3 = Decoder(256, 128, time_emb_dim)
         self.dec4 = Decoder(128, 64, time_emb_dim)
-        
+
         # Final convolution
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
     def forward(self, x, t):
         t = self.time_emb(t)
-        
+
         # Encoder
         skip1, x = self.enc1(x, t)
         skip2, x = self.enc2(x, t)
@@ -49,9 +50,9 @@ class SimpleUNet(nn.Module):
 
         # Final convolution
         x = self.final_conv(x)
-        
+
         return x
-    
+
 
 class Simple5UNet(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
@@ -102,37 +103,38 @@ class Simple5UNet(nn.Module):
 
         # Final output
         return self.final_conv(x)
-    
+
+
 class UNetAttn(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttn, self).__init__()
         self.time_emb = TimeEmbedding(time_emb_dim)
-        
+
         # Encoder
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
         self.enc4 = Encoder(256, 512, time_emb_dim)
 
         # Bottleneck
         self.bottleneck = ConvBlock(512, 1024, time_emb_dim)
-        self.attn2 = AttentionBlock(1024) #add attention in bottleneck
+        self.attn2 = AttentionBlock(1024)  # add attention in bottleneck
         self.bottleneck2 = ConvBlock(1024, 1024, time_emb_dim)
-        
+
         # Decoder
         self.dec1 = Decoder(1024, 512, time_emb_dim)
         self.dec2 = Decoder(512, 256, time_emb_dim)
         self.attn3 = AttentionBlock(256)
         self.dec3 = Decoder(256, 128, time_emb_dim)
         self.dec4 = Decoder(128, 64, time_emb_dim)
-        
+
         # Final convolution
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
     def forward(self, x, t):
         t = self.time_emb(t)
-        
+
         # Encoder
         skip1, x = self.enc1(x, t)
         skip2, x = self.enc2(x, t)
@@ -154,9 +156,10 @@ class UNetAttn(nn.Module):
 
         # Final convolution
         x = self.final_conv(x)
-        
+
         return x
-    
+
+
 class UNetAttn5(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttn5, self).__init__()
@@ -166,13 +169,13 @@ class UNetAttn5(nn.Module):
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
         self.enc4 = Encoder(256, 512, time_emb_dim)
         self.enc5 = Encoder(512, 1024, time_emb_dim)
 
         # Bottleneck
         self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim)
-        self.attn2 = AttentionBlock(2048) #add attention in bottleneck
+        self.attn2 = AttentionBlock(2048)  # add attention in bottleneck
         self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim)
 
         # Decoder
@@ -212,37 +215,38 @@ class UNetAttn5(nn.Module):
 
         # Final output
         return self.final_conv(x)
-    
+
+
 class UNetAttnD(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttnD, self).__init__()
         self.time_emb = TimeEmbedding(time_emb_dim)
-        
+
         # Encoder
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
         self.enc4 = Encoder(256, 512, time_emb_dim)
 
         # Bottleneck
-        self.bottleneck = ConvBlock(512, 1024, time_emb_dim, dropout = 0.1)
-        self.attn2 = AttentionBlock(1024) #add attention in bottleneck
-        self.bottleneck2 = ConvBlock(1024, 1024, time_emb_dim, dropout = 0.1)
-        
+        self.bottleneck = ConvBlock(512, 1024, time_emb_dim, dropout=0.1)
+        self.attn2 = AttentionBlock(1024)  # add attention in bottleneck
+        self.bottleneck2 = ConvBlock(1024, 1024, time_emb_dim, dropout=0.1)
+
         # Decoder
         self.dec1 = Decoder(1024, 512, time_emb_dim)
         self.dec2 = Decoder(512, 256, time_emb_dim)
         self.attn3 = AttentionBlock(256)
         self.dec3 = Decoder(256, 128, time_emb_dim)
         self.dec4 = Decoder(128, 64, time_emb_dim)
-        
+
         # Final convolution
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
     def forward(self, x, t):
         t = self.time_emb(t)
-        
+
         # Encoder
         skip1, x = self.enc1(x, t)
         skip2, x = self.enc2(x, t)
@@ -264,9 +268,10 @@ class UNetAttnD(nn.Module):
 
         # Final convolution
         x = self.final_conv(x)
-        
+
         return x
-    
+
+
 class UNetAttnD5(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttnD5, self).__init__()
@@ -276,14 +281,14 @@ class UNetAttnD5(nn.Module):
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
         self.enc4 = Encoder(256, 512, time_emb_dim)
         self.enc5 = Encoder(512, 1024, time_emb_dim)
 
         # Bottleneck
-        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout = 0.1)
-        self.attn2 = AttentionBlock(2048) #add attention in bottleneck
-        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout = 0.1)
+        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout=0.1)
+        self.attn2 = AttentionBlock(2048)  # add attention in bottleneck
+        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout=0.1)
 
         # Decoder
         self.dec1 = Decoder(2048, 1024, time_emb_dim)
@@ -322,7 +327,8 @@ class UNetAttnD5(nn.Module):
 
         # Final output
         return self.final_conv(x)
-    
+
+
 class UNetAttnD5M(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttnD5M, self).__init__()
@@ -332,18 +338,18 @@ class UNetAttnD5M(nn.Module):
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
         self.enc4 = Encoder(256, 512, time_emb_dim)
         self.enc5 = Encoder(512, 1024, time_emb_dim)
 
         # Bottleneck
-        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout = 0.1)
-        self.attn2 = AttentionBlock(2048) #add attention in bottleneck
-        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout = 0.1)
+        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout=0.1)
+        self.attn2 = AttentionBlock(2048)  # add attention in bottleneck
+        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout=0.1)
 
         # Decoder
         self.dec1 = Decoder(2048, 1024, time_emb_dim)
-        self.dec2 = Decoder(1024, 512, time_emb_dim, dropout = 0.1)
+        self.dec2 = Decoder(1024, 512, time_emb_dim, dropout=0.1)
         self.dec3 = Decoder(512, 256, time_emb_dim)
         self.attn3 = AttentionBlock(256)
         self.dec4 = Decoder(256, 128, time_emb_dim)
@@ -378,6 +384,7 @@ class UNetAttnD5M(nn.Module):
 
         # Final output
         return self.final_conv(x)
+
 
 class UNetAttnD5E(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
@@ -388,14 +395,14 @@ class UNetAttnD5E(nn.Module):
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
-        self.enc4 = Encoder(256, 512, time_emb_dim, dropout = 0.05)
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
+        self.enc4 = Encoder(256, 512, time_emb_dim, dropout=0.05)
         self.enc5 = Encoder(512, 1024, time_emb_dim)
 
         # Bottleneck
-        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout = 0.1)
-        self.attn2 = AttentionBlock(2048) #add attention in bottleneck
-        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout = 0.1)
+        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout=0.1)
+        self.attn2 = AttentionBlock(2048)  # add attention in bottleneck
+        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout=0.1)
 
         # Decoder
         self.dec1 = Decoder(2048, 1024, time_emb_dim)
@@ -434,6 +441,7 @@ class UNetAttnD5E(nn.Module):
 
         # Final output
         return self.final_conv(x)
+
 
 class UNetAttnMoreD(nn.Module):
     """
@@ -445,6 +453,7 @@ class UNetAttnMoreD(nn.Module):
         out_channels: Number of output channels.
         time_emb_dim: Dimension of the time embedding.
     """
+
     def __init__(self, in_channels=1, out_channels=1, time_emb_dim=256):
         super(UNetAttnMoreD, self).__init__()
         self.time_emb = TimeEmbedding(time_emb_dim)
@@ -453,18 +462,18 @@ class UNetAttnMoreD(nn.Module):
         self.enc1 = Encoder(in_channels, 64, time_emb_dim)
         self.enc2 = Encoder(64, 128, time_emb_dim)
         self.enc3 = Encoder(128, 256, time_emb_dim)
-        self.attn1 = AttentionBlock(256) #add attention at 16*16
-        self.enc4 = Encoder(256, 512, time_emb_dim, dropout = 0.02)
-        self.enc5 = Encoder(512, 1024, time_emb_dim, dropout = 0.02)
+        self.attn1 = AttentionBlock(256)  # add attention at 16*16
+        self.enc4 = Encoder(256, 512, time_emb_dim, dropout=0.02)
+        self.enc5 = Encoder(512, 1024, time_emb_dim, dropout=0.02)
 
         # Bottleneck
-        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout = 0.1)
-        self.attn2 = AttentionBlock(2048) #add attention in bottleneck
-        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout = 0.1)
+        self.bottleneck1 = ConvBlock(1024, 2048, time_emb_dim, dropout=0.1)
+        self.attn2 = AttentionBlock(2048)  # add attention in bottleneck
+        self.bottleneck2 = ConvBlock(2048, 2048, time_emb_dim, dropout=0.1)
 
         # Decoder
         self.dec1 = Decoder(2048, 1024, time_emb_dim)
-        self.dec2 = Decoder(1024, 512, time_emb_dim, dropout = 0.02)
+        self.dec2 = Decoder(1024, 512, time_emb_dim, dropout=0.02)
         self.dec3 = Decoder(512, 256, time_emb_dim)
         self.attn3 = AttentionBlock(256)
         self.dec4 = Decoder(256, 128, time_emb_dim)

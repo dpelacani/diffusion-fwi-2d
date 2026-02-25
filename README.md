@@ -1,4 +1,23 @@
-conda env
-pip install requirements
+First install stride
+then in the same conda environment
+```
+git clone
+cd diffusion-fwi-2d
+```
 
-pip install -e .
+optional but recommended: 
+```conda uninstall pytorch```
+
+```
+pip install -r requirements.txt
+```
+
+if running into memory errors you can do
+```
+mkdir ~/tmp
+TMPDIR=~/tmp pip install -r requirements txt
+```
+
+then finally
+
+```pip install -e .```

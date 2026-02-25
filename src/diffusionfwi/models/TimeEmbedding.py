@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
 class SinusoidalPosEmb(nn.Module):
     """
     Sinusoidal positional embedding for time steps.
@@ -11,6 +12,7 @@ class SinusoidalPosEmb(nn.Module):
     Args:
         dim: The dimension of the embedding.
     """
+
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
@@ -26,7 +28,8 @@ class SinusoidalPosEmb(nn.Module):
         emb = torch.stack((emb.sin(), emb.cos()), dim=-1)  # (B, half_dim, 2)
         emb = emb.view(len(time), self.dim)
         return emb
-    
+
+
 class TimeEmbedding(nn.Module):
     """
     Time embedding module that applies a sinusoidal positional embedding followed by a linear transformation.
@@ -36,7 +39,8 @@ class TimeEmbedding(nn.Module):
         dim: The dimension of the embedding.
         hidden_dim: The dimension of the hidden layer in the MLP.
     """
-    def __init__(self, dim, hidden_dim = 512):
+
+    def __init__(self, dim, hidden_dim=512):
         super().__init__()
         self.sin_emb = SinusoidalPosEmb(dim)
         self.mlp = nn.Sequential(

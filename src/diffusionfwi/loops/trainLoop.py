@@ -1,5 +1,6 @@
 import torch
 
+
 # Define the training loop
 def train(model, optimizer, criterion, data_loader, forward_diffusion, device, T=1000):
     """
@@ -19,7 +20,7 @@ def train(model, optimizer, criterion, data_loader, forward_diffusion, device, T
     """
     model.train()
     total_loss = 0.0
-   
+
     for x0 in data_loader:
         x0 = x0.to(device)
 

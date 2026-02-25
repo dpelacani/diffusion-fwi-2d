@@ -25,14 +25,15 @@
 
 export HOME="/scratch_hive/dp4018"
 
+module avail
 nvidia-smi
 nvcc --version
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate dfwi
+conda activate stride
 
 # These are individual tasks
-srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/training.py
-# srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/forward.py # 
+# srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/training.py
+srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/forward.py  
 # srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/inverse.py
 wait
 

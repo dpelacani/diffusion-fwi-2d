@@ -11,16 +11,20 @@ import lpips
 from typing import Dict
 import random
 from itertools import combinations
-import matplotlib.pyplot as plt  
-    
+import matplotlib.pyplot as plt
+
+
 class GetBackbone(nn.Module):
     """
     Get the backbone of the Inception V3 model pretrained on RadImageNet.
     It uses the Inception V3 architecture without the final classification layers.
     """
+
     def __init__(self):
         super().__init__()
-        base_model = inception_v3(aux_logits=False, transform_input=False, pretrained=False)
+        base_model = inception_v3(
+            aux_logits=False, transform_input=False, pretrained=False
+        )
         encoder_layers = list(base_model.children())
         # remove the last two layers, extract the 2048-dim features
         self.backbone = nn.Sequential(*encoder_layers[:-2])
@@ -29,7 +33,8 @@ class GetBackbone(nn.Module):
         x = self.backbone(x)
         x = torch.flatten(x, 1)
         return x
-    
+
+
 class RadImageNetFeaturesFID(nn.Module):
     """
     Inception V3 model pretrained on RadImageNet for FID computation.
@@ -39,6 +44,7 @@ class RadImageNetFeaturesFID(nn.Module):
     Args:
         w_path: Path to the model weights file.
     """
+
     def __init__(self, w_path: str):
         super().__init__()
         self.model = GetBackbone()
@@ -50,12 +56,14 @@ class RadImageNetFeaturesFID(nn.Module):
         x = self.model(x)
         return x
 
+
 class EvaluationMetrics:
     """
     A class to compute various evaluation metrics for evaluating the performance of diffusion models.
     It includes methods to normalize images, compute statistics, plot histograms,
     and compute FID, MMD, and LPIPS metrics.
     """
+
     def __init__(self, real, fake, model, device):
         """
         Initialize the EvaluationMetrics class with real and fake images, model, and device.
@@ -76,8 +84,10 @@ class EvaluationMetrics:
         # postprocess the images back to original pixel values (velocity)
         self.real = self.postprocess_vp(real)
         self.fake = self.postprocess_vp(fake)
-    
-    def normalize_images(self, images, reshape_size=(224, 224), normalize=False, reshape=True):
+
+    def normalize_images(
+        self, images, reshape_size=(224, 224), normalize=False, reshape=True
+    ):
         """
         Normalize images to the range [0, 1] and resize them to the specified shape.
 
@@ -86,7 +96,7 @@ class EvaluationMetrics:
             reshape_size: Size to resize the images to.
             normalize: Whether to normalize the images to the range [0, 1].
             reshape: Whether to reshape the images to the specified size.
-        
+
         Returns:
             Normalized and resized images.
         """
@@ -98,7 +108,9 @@ class EvaluationMetrics:
             images = images.repeat(1, 3, 1, 1)
         if reshape:
             # Resize to the desired shape
-            images = F.interpolate(images, size=reshape_size, mode='bilinear', align_corners=False)
+            images = F.interpolate(
+                images, size=reshape_size, mode="bilinear", align_corners=False
+            )
         return images
 
     def postprocess_vp(self, tensor):
@@ -107,7 +119,7 @@ class EvaluationMetrics:
 
         Args:
             tensor: Input tensor to post-process.
-        
+
         Returns:
             Post-processed tensor.
         """
@@ -117,9 +129,11 @@ class EvaluationMetrics:
         tensor = torch.exp(tensor - 1.0)
         tensor = tensor * 3000.0
         # Resize back to original shape
-        tensor = F.interpolate(tensor, size=(320, 256), mode='bilinear', align_corners=True)
+        tensor = F.interpolate(
+            tensor, size=(320, 256), mode="bilinear", align_corners=True
+        )
         return tensor
-    
+
     def statistics(self, x):
         """
         Compute the mean, standard deviation, minimum, and maximum of the input tensor.
@@ -137,7 +151,18 @@ class EvaluationMetrics:
         max_val = x.max().item()
         return mean, std, min_val, max_val
 
-    def plot_hist(self, label1="Real", label2="Generated", bins=100, figsize=(6,5), color1='skyblue', color2='salmon', ylim=0.03, log=False, save_path=None):
+    def plot_hist(
+        self,
+        label1="Real",
+        label2="Generated",
+        bins=100,
+        figsize=(6, 5),
+        color1="skyblue",
+        color2="salmon",
+        ylim=0.03,
+        log=False,
+        save_path=None,
+    ):
         """
         Plot histograms of the real and generated images.
 
@@ -156,10 +181,30 @@ class EvaluationMetrics:
         real_vals = self.real.detach().cpu().view(-1).numpy()
         fake_vals = self.fake.detach().cpu().view(-1).numpy()
 
-        lo, hi = min(real_vals.min(), fake_vals.min()), max(real_vals.max(), fake_vals.max())
+        lo, hi = min(real_vals.min(), fake_vals.min()), max(
+            real_vals.max(), fake_vals.max()
+        )
         bin_edges = np.linspace(lo, hi, bins + 1)
-        plt.hist(real_vals, bins=bin_edges, density=True, color=color1, edgecolor='black', alpha=0.3, label=label1, log=log)
-        plt.hist(fake_vals, bins=bin_edges, density=True, color=color2, edgecolor='black', alpha=0.3, label=label2, log=log)
+        plt.hist(
+            real_vals,
+            bins=bin_edges,
+            density=True,
+            color=color1,
+            edgecolor="black",
+            alpha=0.3,
+            label=label1,
+            log=log,
+        )
+        plt.hist(
+            fake_vals,
+            bins=bin_edges,
+            density=True,
+            color=color2,
+            edgecolor="black",
+            alpha=0.3,
+            label=label2,
+            log=log,
+        )
 
         plt.title("Histogram for pixel values")
         plt.xlabel("Pixel Value")
@@ -187,8 +232,10 @@ class EvaluationMetrics:
         _, _, H, W = images.shape
         start_y = (H - crop_size) // 2
         start_x = (W - crop_size) // 2
-        return images[:, :, start_y:start_y + crop_size, start_x:start_x + crop_size]
-    
+        return images[
+            :, :, start_y : start_y + crop_size, start_x : start_x + crop_size
+        ]
+
     def plot_hist_soft_tissue(self, ylim=2e5, save_path=None):
         """
         Plot histograms of the soft tissue pixel values from the real and generated images.
@@ -201,11 +248,29 @@ class EvaluationMetrics:
         cropped_fake = self.center_crop_batch(self.fake, 110)
         real_vals = cropped_real.detach().cpu().numpy().flatten()
         fake_vals = cropped_fake.detach().cpu().numpy().flatten()
-        lo, hi = min(real_vals.min(), fake_vals.min()), max(real_vals.max(), fake_vals.max())
+        lo, hi = min(real_vals.min(), fake_vals.min()), max(
+            real_vals.max(), fake_vals.max()
+        )
         bin_edges = np.linspace(lo, hi, 100 + 1)
         plt.figure(figsize=(6, 5))
-        plt.hist(real_vals, bins=bin_edges, density=True, color='skyblue', edgecolor='black', alpha=0.3, label='Real')
-        plt.hist(fake_vals, bins=bin_edges, density=True, color='salmon', edgecolor='black', alpha=0.3, label='Generated')
+        plt.hist(
+            real_vals,
+            bins=bin_edges,
+            density=True,
+            color="skyblue",
+            edgecolor="black",
+            alpha=0.3,
+            label="Real",
+        )
+        plt.hist(
+            fake_vals,
+            bins=bin_edges,
+            density=True,
+            color="salmon",
+            edgecolor="black",
+            alpha=0.3,
+            label="Generated",
+        )
         plt.title("Histogram for soft tissue pixel values")
         plt.xlabel("Pixel Value")
         plt.ylabel("Density")
@@ -237,7 +302,7 @@ class EvaluationMetrics:
         idx1 = torch.tensor(idx1, dtype=torch.long, device=self.device)
         idx2 = torch.tensor(idx2, dtype=torch.long, device=self.device)
         return idx1, idx2
-    
+
     def blur_batch(self, batch, kernel_size=5, sigma=1.0):
         """
         Apply Gaussian blur to a batch of images. This will be used to calculate a bad value for metrics.
@@ -252,8 +317,8 @@ class EvaluationMetrics:
         """
         blur = T.GaussianBlur(kernel_size=kernel_size, sigma=sigma)
         return torch.stack([blur(img) for img in batch])
-    
-    def compute_fid(self, b1 = None, b2 = None, use_radinet=True, model = None):
+
+    def compute_fid(self, b1=None, b2=None, use_radinet=True, model=None):
         """
         Compute the Frechet Inception Distance (FID) between two sets of images.
 
@@ -270,7 +335,9 @@ class EvaluationMetrics:
             b1, b2 = self.real_norm, self.fake_norm
         # if use_radinet is True, use the RadImageNet model for FID computation, and we don't need to resize the images
         if use_radinet:
-            fid = FrechetInceptionDistance(model = model, feature_dim=2048).to(self.device)
+            fid = FrechetInceptionDistance(model=model, feature_dim=2048).to(
+                self.device
+            )
             with torch.no_grad():
                 fid.update(self.normalize_images(b1).to(self.device), is_real=True)
                 fid.update(self.normalize_images(b2).to(self.device), is_real=False)
@@ -278,12 +345,22 @@ class EvaluationMetrics:
             # we use the default inceptionv3 model for FID computation, and we need to resize the images to 299x299
             fid = FrechetInceptionDistance(feature_dim=2048).to(self.device)
             with torch.no_grad():
-                fid.update(self.normalize_images(b1, reshape_size=(299, 299), normalize=True).to(self.device), is_real=True)
-                fid.update(self.normalize_images(b2, reshape_size=(299, 299), normalize=True).to(self.device), is_real=False)
+                fid.update(
+                    self.normalize_images(
+                        b1, reshape_size=(299, 299), normalize=True
+                    ).to(self.device),
+                    is_real=True,
+                )
+                fid.update(
+                    self.normalize_images(
+                        b2, reshape_size=(299, 299), normalize=True
+                    ).to(self.device),
+                    is_real=False,
+                )
 
         return max(float(fid.compute()), 0.0)
-    
-    def compute_mmd(self, b1 = None, b2 = None, feat = False, model = None, var=1.0):
+
+    def compute_mmd(self, b1=None, b2=None, feat=False, model=None, var=1.0):
         """
         Compute the Maximum Mean Discrepancy (MMD) between two sets of images.
 
@@ -303,7 +380,7 @@ class EvaluationMetrics:
             b1, b2 = self.real_norm, self.fake_norm
         b1 = b1.to(self.device)
         b2 = b2.to(self.device)
-    
+
         if feat:
             # extract features using the given model
             model = model.to(self.device)
@@ -320,7 +397,7 @@ class EvaluationMetrics:
         if isinstance(value, torch.Tensor):
             value = value.item()
         return float(value)
-    
+
     def compute_lpips(self, img):
         """
         Compute the Learned Perceptual Image Patch Similarity (LPIPS) between two sets of images.
@@ -335,11 +412,10 @@ class EvaluationMetrics:
         img = self.normalize_images(img, reshape=False)
         # select pairs of images
         idx1, idx2 = self.select_pairs(img.shape[0])
-        loss_fn = lpips.LPIPS(net='alex').to(self.device)
+        loss_fn = lpips.LPIPS(net="alex").to(self.device)
         with torch.no_grad():
             imgs_i = img[idx1]
             imgs_j = img[idx2]
             dists = loss_fn(imgs_i, imgs_j)  # [M, 1, 1, 1] or [M, 1]
             mean_dist = dists.mean().item()
         return mean_dist
-
