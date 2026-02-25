@@ -36,5 +36,7 @@ srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/training.py
 # srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/inverse.py
 wait
 
+echo "Job completed successfully."
+
 # Finish the script
 exit 0
