@@ -1,7 +1,8 @@
 import torch
 from stride import *
 
-from src.fwi.operator import DiffusionVpOperator
+from src.fwi import DiffusionVpOperator
+from src.diffusion import DiffusionProcess
 
 
 async def main(runtime):
@@ -84,7 +85,10 @@ async def main(runtime):
     from src.diffusion.diffusionProcess import DiffusionProcess
     from src.diffusion.models import UNetAttnMoreD
 
+    # Set up the diffusion process and model that we will use in the operator
     diffusion_process = DiffusionProcess(T=1000, s=0.008)
+
+    # Load the pre-trained diffusion model
     diffusion_model = UNetAttnMoreD(
         in_channels=1,
         out_channels=1,
@@ -97,13 +101,12 @@ async def main(runtime):
         "diffusion",
         DiffusionVpOperator(
             x_dim=128,
-            diffusion_model=diffusion_model,
-            diffusion_process=diffusion_process,
-            mask=None,
-            update_fn=None,
-            scheduling_args=None,
-            device="cuda" if torch.cuda.is_available() else "cpu",
-            total_iterations=num_blocks * num_iters,
+            diffusion_model=diffusion_model,            # the diffusion model to use in the operator
+            diffusion_process=diffusion_process,        # the diffusion process to use in the operator
+            mask=None,                                  # a blending mask to be passed to the update function, if needed
+            update_fn=None,                             # a function to combine the original and generated volumes
+            scheduling_args=None,                       # arguments for the diffusion-fwi scheduling
+            total_iterations=num_blocks * num_iters,    # total number of iterations for the whole FWI run
             device="cuda" if torch.cuda.is_available() else "cpu"
         ),
     )
@@ -111,7 +114,7 @@ async def main(runtime):
     ########################################################
     ########################################################
 
-    # create the optimiser
+    # Create the optimiser
     optimiser = GradientDescent(vp, step_size=step_size,
                                 process_grad=process_grad,
                                 process_model=process_model,

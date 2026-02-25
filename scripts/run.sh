@@ -11,8 +11,9 @@
 #SBATCH --gres=gpu:1                      # Number of GPUs to allocate to this job
 #SBATCH --time=00:10:00                   # The walltime
 
-#SBATCH -e /scratch_hive/dp4018/scripts/diffusion-fwi-2d/slurm/slurm-%j.err              # File to redirect stderr
-#SBATCH -o /scratch_hive/dp4018/scripts/diffusion-fwi-2d/slurm/slurm-%j.out              # File to redirect stdout
+#SBATCH -e /scratch_hive/dp4018/scripts/diffusion-fwi-2d/slurm/slurm.err              # File to redirect stderr %j
+#SBATCH -o /scratch_hive/dp4018/scripts/diffusion-fwi-2d/slurm/slurm.out              # File to redirect stdout %j
+
 #SBATCH --nodes=1                          # Single node (multi-node requires different setup)
 #SBATCH --ntasks=1                         # Single task (accelerate handles multi-GPU internally)
 #SBATCH --ntasks-per-socket=1              # Max tasks per CPU socket
@@ -26,11 +27,13 @@ export HOME="/scratch_hive/dp4018"
 
 nvidia-smi
 nvcc --version
-source ~/anaconda3/etc/profile.d/conda.sh
-conda activate df2i
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate dfwi
 
 # These are individual tasks
-srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/diffusion.py
+srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/training.py
+# srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/forward.py # 
+# srun python /scratch_hive/dp4018/scripts/diffusion-fwi-2d/scripts/inverse.py
 wait
 
 # Finish the script
