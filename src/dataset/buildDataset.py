@@ -88,6 +88,21 @@ class AcousticNormalization(object):
         tensor = torch.log(tensor) + 1.0
         return tensor
 
+class ReverseAcousticNormalization(object):
+    """
+    Reverse the acoustic normalization.
+
+    Args:
+        tensor: Input tensor to be reversed.
+    """
+    def __call__(self, tensor):
+        # Reverse the logarithmic transformation
+        tensor = torch.exp(tensor - 1.0)
+        # Reverse the normalization
+        tensor = tensor * 3000.0
+        return tensor
+
+
 def load_true_model(data_dir, true_model, transform=None):
     """ Load the true model image from the specified directory.
 

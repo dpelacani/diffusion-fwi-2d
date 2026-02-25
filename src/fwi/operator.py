@@ -2,16 +2,17 @@ import torch
 import numpy as np
 
 from torchvision import transforms
-from stride import *  # noqa: F403
+from stride import *  
 
 from typing import Optional, Tuple
 
 from .pipelines import DiffusionFWIPipeline
+from ..diffusion.diffusionProcess import DiffusionProcess
 
 import logging
 
 
-class DiffusionVpOperator(Operator):  # noqa: F405
+class DiffusionVpOperator(Operator):
     """Diffusion-based velocity model operator for FWI.
 
     Args:
@@ -35,6 +36,7 @@ class DiffusionVpOperator(Operator):  # noqa: F405
         x_dim: int,
         total_iterations: int,
         diffusion_model: torch.nn.Module,
+        diffusion_process: DiffusionProcess,
         mask: Optional[np.ndarray] = None,
         update_fn: Optional[callable] = None,
         scheduling_args: Optional[dict] = None,
@@ -136,6 +138,8 @@ class DiffusionVpOperator(Operator):  # noqa: F405
             )
 
             update_kwargs.update({"alpha": alpha})
+
+            # Rewrite vp.data in-place with the output of the diffusion pipeline
             with torch.no_grad():
                 vp.data[:] = self.pipeline.run(
                     vp.data,

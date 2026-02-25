@@ -16,10 +16,12 @@ class DiffusionProcess:
         self.device = device
         self.set_variables()
 
+
     def set_variables(self):
         """
         Set the beta and alpha variables for the diffusion process. So we can use them in the forward and reverse diffusion processes.
         """
+        self.timesteps = np.arange(0, self.T + 1)
         self.betas = self.cosine_beta_schedule().to(self.device)
         self.alphas = 1. - self.betas
         self.alphas_bar = torch.cumprod(self.alphas, dim=0)
@@ -33,10 +35,8 @@ class DiffusionProcess:
         Returns: 
             A tensor of betas for each timestep.
         """
-        steps = self.T + 1
-        x = np.linspace(0, self.T, steps)
         # calculate the variables using the cosine function
-        alphas_cumprod = np.cos(((x / self.T) + self.s) / (1 + self.s) * np.pi * 0.5) ** 2
+        alphas_cumprod = np.cos(((self.timesteps / self.T) + self.s) / (1 + self.s) * np.pi * 0.5) ** 2
         alphas_cumprod = alphas_cumprod / alphas_cumprod[0]  # normalize to 1
         betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
         return torch.tensor(np.clip(betas, 1e-6, 0.999), dtype=torch.float32)

@@ -7,12 +7,23 @@ import numpy as np
 from tqdm import tqdm
 
 from torchvision import transforms
-from ..dataset.buildDataset import AcousticNormalization
+from ..dataset.buildDataset import AcousticNormalization, ReverseAcousticNormalization
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.handlers.clear()  # Clear any existing handlers
+
+
+def log_array_stats(arr: Union[torch.Tensor, np.ndarray], logger: Optional[logging.Logger] = None):
+    """Utility function to log statistics of a tensor or numpy array."""
+    logger = logger or logging.getLogger(__name__)
+    if isinstance(arr, torch.Tensor):
+        arr = arr.cpu().numpy()
+    logger.info(
+        f"Array stats - shape: {arr.shape}, dtype: {arr.dtype}, "
+        f"min: {arr.min():.4f}, max: {arr.max():.4f}, mean: {arr.mean():.4f}, std: {arr.std():.4f}"
+    )
 
 
 class DataProcessingPipeline(torch.nn.Module):
@@ -22,7 +33,7 @@ class DataProcessingPipeline(torch.nn.Module):
     The exact steps are determined by the provided configuration.
     """
 
-    def __init__(self, x_dim: int=256):
+    def __init__(self, x_dim: int=256, original_shape: Optional[Tuple[int, int]] = None):
         super().__init__()
         self.transform = transforms.Compose([
             # use anitialias = True to avoid aliasing artifacts
@@ -31,49 +42,49 @@ class DataProcessingPipeline(torch.nn.Module):
             AcousticNormalization(),
             # normalize to -1 to 1 range
             transforms.Normalize(mean=[0.5], std=[0.5])])
+        
+        self.inverse_transform = transforms.Compose([
+            # inverse of normalize
+            transforms.Normalize(mean=[-1.0], std=[2.0]),
+            # inverse of log transformation
+            ReverseAcousticNormalization(),
+            # inverse of resize - use nearest neighbour to avoid creating new values
+            transforms.Resize(original_shape or x_dim, interpolation=InterpolationMode.NEAREST)
+        ])
 
-    def forward(self, x):
+    def process_forward(self, x):
         return self.transform(x)
+
+    def process_inverse(self, x):
+        return self.inverse_transform(x)
 
 
 class DiffusionFWIPipeline:
     """DiffusionFWIPipeline with consistent device handling and
     robust scheduler interaction.
 
-    This pipeline loads a diffusion model from checkpoint and runs
-    inference on input volumes with optional preprocessing and
-    postprocessing via a DataProcessingPipeline.
+    This pipeline encapsulates all steps related to running the diffusion model for FWI,
+    including data preprocessing, model inference, and blending with the original velocity model.
 
     Args:
-        diffusion_checkpoint: Path to diffusion model checkpoint.
-        data_pipeline: Optional DataProcessingPipeline for preprocessing
-            and postprocessing volumes.
-        config: Optional dict with subdicts for configuration:
-            - "diffusion": kwargs to override when loading the diffusion Runner
-            - "scheduler": kwargs to override when loading the scheduler
-            - "inference": {
-                  "mode": "local" or "api",
-                  "api_url": "...",
-                  "api_timeout": 300,
-              }
-        update_fn: Optional callable to update the generated volume
-            based on the original volume. Should accept
-            (generated_volume: torch.Tensor, original_volume: torch.Tensor, **kwargs)
-        device: torch.device to run the pipeline on. Defaults to CPU.
+        diffusion_model (torch.nn.Module): Pre-trained diffusion model 
+        data_pipeline (DataProcessingPipeline, optional): Optional data preprocessing pipeline
+        update_fn (callable, optional): Optional function to blend the generated volume with the original
+        device (torch.device, optional): Device to run the pipeline on
     """
 
     def __init__(
         self,
-        diffusion_model: Optional[torch.nn.Module] = None,
-        data_pipeline: Optional[DataProcessingPipeline] = None,
+        diffusion_model: Optional[torch.nn.Module],
+        data_pipeline: Optional[DataProcessingPipeline],
         update_fn: Optional[callable] = None,
-        device: Optional[torch.device] = None,
+        device: Optional[torch.device] = "cpu",
     ) -> None:
-        self.diffusion_model = diffusion_model
 
+        self.diffusion_model = diffusion_model
         self.update_fn = update_fn or self._update_fn
         self.data_pipeline = data_pipeline
-        self.device = device or torch.device("cpu")
+        self.device = device
 
 
     def run(
@@ -83,21 +94,8 @@ class DiffusionFWIPipeline:
         random_seed: Optional[int] = 42,
         update_kwargs: Optional[dict] = None,
         verbose: bool = False,
-        return_auxiliary_volumes: bool = False,
     ) -> Union[torch.Tensor, np.ndarray, Tuple[torch.Tensor, torch.Tensor]]:
-        """Run the diffusion pipeline on an input volume.
-
-        - Accepts numpy arrays or torch tensors.
-        - For local mode:
-            * Applies forward preprocessing (if data_pipeline is set)
-            * Runs NN inference locally via _run_local_inference
-            * Applies inverse preprocessing
-        - For API mode:
-            * Calls the remote API via _denoise_via_api
-            * Assumes the service returns a denoised volume in the
-              SAME space
-              /shape as the input.
-        - At the end, blends with the original via update_fn.
+        """Run the diffusion FWI pipeline on the given velocity model volume.
         """
         device = self.device
 
@@ -115,17 +113,18 @@ class DiffusionFWIPipeline:
             logger.info("Volume before pipeline.")
             log_array_stats(volume)
 
-        # Forward preprocessing
+        # Forward data preprocessing
         if self.data_pipeline is not None:
             volume = self.data_pipeline.process_forward(volume)
-            if volume.ndim != 5:
+            if volume.ndim != 4:
                 logger.error(
                     f"Volume after forward pipeline has wrong dims: {volume.shape},"
                     " reshaping now - could cause unexpected behaviour."
                 )
-            while volume.ndim < 5:
+            while volume.ndim < 4:
                 volume = volume.unsqueeze(0)
 
+        # Move to device for diffusion processing
         volume = volume.to(device)
         volume_input = volume.clone()
 
@@ -133,43 +132,14 @@ class DiffusionFWIPipeline:
             logger.info("Volume after data preprocessing.")
             log_array_stats(volume)
 
-        # ------------------------------------------------------------------
-        # Branch on inference mode
-        # ------------------------------------------------------------------
-        if self.inference_mode == "local":
-            if self.runner is None:
-                raise RuntimeError(
-                    "Runner not initialised; call _load_diffusion_runner or "
-                    "initialise with a checkpoint for local inference."
-                )
 
-            # --- Local model inference (preprocessed space) ---
-            volume = self._denoise_local(
+        # --- Denoised model ---
+        volume = self._denoise_local(
                 volume=volume,
                 t_start=t_start,
                 random_seed=random_seed,
                 verbose=verbose,
             )
-
-        elif self.inference_mode == "api":
-            if verbose:
-                logger.info(
-                    f"Running inference via API at {self.api_url} "
-                    f"(timeout={self.api_timeout}s)"
-                )
-            volume = self._denoise_via_api(
-                volume,
-                t_start=t_start,
-                random_seed=random_seed,
-                verbose=verbose,
-            )
-        else:
-            raise ValueError(f"Unknown inference_mode: {self.inference_mode}")
-
-        if return_auxiliary_volumes:
-            volume_reg = volume.clone()
-        else:
-            volume_reg = None
 
         # Inverse preprocessing
         if self.data_pipeline is not None:
@@ -189,11 +159,7 @@ class DiffusionFWIPipeline:
             logger.info("Blended volume.")
             log_array_stats(volume)
 
-        if volume_reg is None:
-            return volume
-        else:
-            # volume_pre_reg is the decoded volume before inverse pipeline
-            return volume, volume_reg, volume_input
+        return volume if is_tensor else volume.cpu().numpy()
 
     # --------------------------------------------------------------------- #
     # Local inference (shared between pipeline & API server)
@@ -205,47 +171,20 @@ class DiffusionFWIPipeline:
         random_seed: Optional[int] = 42,
         verbose: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor | None]]:
-        """Core LDM inference step on a *preprocessed* volume.
-
-        This is what you can also call from your API endpoint, e.g.:
-
-            def api_handler(volume):
-                # volume already in (N, C, D, H, W) and correct scaling
-                denoised = pipeline._run_local_inference(volume, t_start=100)
-
-        It:
-        - Assumes volume has shape (N, C, D, H, W)
-        - Uses self.runner.{autoencoder, model, scheduler}
-        - Returns the decoded, denoised volume in the same (preprocessed) space.
+        """Core inference step on a *preprocessed* volume.
         """
-        if self.inference_mode != "local":
-            raise RuntimeError("Local inference requested but inference_mode='api'.")
-
-        assert self.runner is not None, "Runner not initialized"
         device = self.device
 
-        # Move model and scheduler to device (safe, idempotent)
-        self.runner.model = self.runner.model.to(device)
-        self.runner.scheduler = self._move_scheduler_tensors(
-            self.runner.scheduler, device
-        )
-
+        # Move model and volume to device
+        self.diffusion_model = self.diffusion_model.to(device)
         volume = volume.to(device)
 
-        # ---------------- Encode ----------------
-        self.runner.autoencoder.eval()
-        with torch.inference_mode():
-            _ = self.runner.autoencoder.encode(volume)
-            latents = self.runner.autoencoder.sample() * self.latent_scaling_factor
-            if verbose:
-                logger.info("Encoded volume (latents).")
-                log_array_stats(latents)
 
         # pick nearest available timestep value
         t_idx = int(
-            torch.abs(self.runner.scheduler.timesteps - t_start).argmin().item()
+            torch.abs(self.diffusion_process.timesteps - t_start).argmin().item()
         )
-        t_val = self.runner.scheduler.timesteps[t_idx].unsqueeze(0).to(device)
+        t_val = self.diffusion_process.timesteps[t_idx].unsqueeze(0).to(device)
 
         if verbose:
             logger.info(f"Picked nearest available timestep value: {t_val}")
@@ -254,124 +193,25 @@ class DiffusionFWIPipeline:
         if random_seed is not None:
             state = torch.random.get_rng_state()
             torch.manual_seed(random_seed)
-            noise = torch.randn_like(latents, device=device)
+            noise = torch.randn_like(volume, device=device)
             torch.random.set_rng_state(state)
         else:
-            noise = torch.randn_like(latents, device=device)
+            noise = torch.randn_like(volume, device=device)
 
         if verbose:
             logger.info(f"Generated noise, shape: {noise.shape}")
 
-        latents = self.runner.scheduler.add_noise(latents, noise, t_val)
+        volume = self.diffusion_process.forward_diffusion(volume, t_val, noise)
 
         # --------------- Sampling ---------------
-        latents = self._sample_from_start_time(latents, t_val, device=device)
+        volume = self._sample_from_start_time(volume, t_val, device=device)
 
         if verbose:
-            logger.info("Latents post sampling.")
-            log_array_stats(latents)
-
-        # --------------- Decode ---------------
-        with torch.no_grad():
-            decoded = self.runner.autoencoder.decode(
-                latents / self.latent_scaling_factor
-            )
-
-            if verbose:
-                logger.info("Decoded, denoised volume (pre-inverse-pipeline).")
-                log_array_stats(decoded)
+            logger.info("Volume post sampling.")
+            log_array_stats(volume)
 
         return decoded
 
-    def _denoise_via_api(
-        self,
-        volume: Union[torch.Tensor, np.ndarray],
-        t_start: int,
-        random_seed: Optional[int] = 42,
-        verbose: bool = False,
-    ) -> torch.Tensor:
-        """
-        Call the new FastAPI denoise endpoint:
-            POST {self.api_url}/denoise
-        using multipart/form-data:
-            - volume: .npy file
-            - t_start, random_seed, verbose, return_auxiliary_volumes: form fields
-        Returns:
-            denoised volume as torch.Tensor (float32) on CPU.
-        """
-        import requests
-
-        api_url = getattr(self, "api_url", None)
-        if not api_url:
-            raise ValueError("self.api_url is not set (e.g. 'http://localhost:8000').")
-
-        url = api_url.rstrip("/") + "/denoise"
-
-        # ---- Convert to numpy (CPU) ----
-        if isinstance(volume, torch.Tensor):
-            vol_np = volume.detach().cpu().numpy()
-        else:
-            vol_np = np.asarray(volume)
-
-        # ---- Serialize to .npy bytes (no temp file needed) ----
-        buf = io.BytesIO()
-        np.save(buf, vol_np)
-        buf.seek(0)
-
-        # ---- Multipart upload (matches curl -F ...) ----
-        files = {
-            # (filename, fileobj/bytes, content_type)
-            "volume": ("volume.npy", buf, "application/octet-stream"),
-        }
-        data = {
-            "t_start": str(int(t_start)),
-            "random_seed": "" if random_seed is None else str(int(random_seed)),
-            "verbose": "true" if verbose else "false",
-        }
-
-        try:
-            resp = requests.post(url, files=files, data=data, timeout=600)
-        except requests.RequestException as e:
-            raise RuntimeError(f"API request failed: {e}") from e
-
-        if resp.status_code != 200:
-            # FastAPI usually returns JSON {"detail": "..."} on errors
-            detail = None
-            try:
-                detail = resp.json()
-            except Exception:
-                detail = resp.text[:2000]
-            raise RuntimeError(
-                f"API returned {resp.status_code} from {url}. Detail: {detail}"
-            )
-
-        # ---- Response is raw .npy bytes ----
-        try:
-            denoised_np = np.load(io.BytesIO(resp.content), allow_pickle=False)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to parse API response as .npy. "
-                f"Got {len(resp.content)} bytes. Error: {e}"
-            ) from e
-
-        denoised_tensor = (
-            torch.from_numpy(denoised_np).to(torch.float32).to(self.device)
-        )
-
-        return denoised_tensor
-
-    def _update_fn(
-        self,
-        generated_volume: Union[torch.Tensor, np.ndarray],
-        original_volume: Union[torch.Tensor, np.ndarray],
-        **kwargs,
-    ) -> Union[torch.Tensor, np.ndarray]:
-        mask = kwargs.get("mask", None)
-        alpha = kwargs.get("alpha", 1.0)
-
-        if mask is None:
-            mask = torch.ones_like(generated_volume)
-        return (1 - alpha * mask) * original_volume + alpha * mask * generated_volume
 
     @torch.no_grad()
     def _sample_from_start_time(
@@ -381,20 +221,19 @@ class DiffusionFWIPipeline:
         device: Optional[torch.device] = None,
     ) -> torch.Tensor:
         """Core sampling loop that walks scheduler timesteps from t_start down to 0."""
-        assert self.runner is not None, "Runner not initialized"
+        
         device = device or self.device
 
         # Move model and scheduler to device (safe, idempotent)
-        self.runner.model = self.runner.model.to(device)
-        self.runner.scheduler = self._move_scheduler_tensors(
-            self.runner.scheduler, device
-        )
-
+        self.diffusion_model = self.diffusion_model.to(device)
         volume = noisy_volume.to(device)
-        timesteps = self.runner.scheduler.timesteps[
-            self.runner.scheduler.timesteps <= t_start.item()
+
+        # pick nearest available timestep value
+        timesteps = self.diffusion_process.timesteps[
+            self.diffusion_process.timesteps <= t_start.item()
         ].to(device)
 
+        # prepare the list of next timesteps for scheduler stepping
         all_next = torch.cat(
             (timesteps[1:], torch.tensor([0], dtype=timesteps.dtype, device=device))
         )
@@ -412,16 +251,27 @@ class DiffusionFWIPipeline:
                 batch = volume.shape[0]
                 model_t = t.unsqueeze(0).expand(batch).to(volume.device)
 
-                output = self.runner.model(volume, timesteps=model_t)
+                e_pred = self.diffusion_model(volume, timesteps=model_t)
 
-                if not isinstance(self.runner.scheduler, RFlowScheduler):
-                    volume, _ = self.runner.scheduler.step(output, t, volume)
-                else:
-                    volume, _ = self.runner.scheduler.step(output, t, volume, next_t)
+                volume = self.diffusion_process.reverse_diffusion(volume, model_t, e_pred, torch.randn_like(volume))
 
                 volume = volume.to(device=device, dtype=volume.dtype)
 
         return volume
+
+
+   def _update_fn(
+        self,
+        generated_volume: Union[torch.Tensor, np.ndarray],
+        original_volume: Union[torch.Tensor, np.ndarray],
+        **kwargs,
+    ) -> Union[torch.Tensor, np.ndarray]:
+        mask = kwargs.get("mask", None)
+        alpha = kwargs.get("alpha", 1.0)
+
+        if mask is None:
+            mask = torch.ones_like(generated_volume)
+        return (1 - alpha * mask) * original_volume + alpha * mask * generated_volume
 
 
     def __repr__(self) -> str:
