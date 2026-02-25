@@ -1,12 +1,11 @@
 import torch
 import numpy as np
 
-from torchvision import transforms
 from stride import *  
 
-from typing import Optional, Tuple
+from typing import Optional
 
-from .pipelines import DiffusionFWIPipeline
+from .pipelines import DiffusionFWIPipeline, DataProcessingPipeline
 from ..diffusion.diffusionProcess import DiffusionProcess
 
 import logging
@@ -33,7 +32,8 @@ class DiffusionVpOperator(Operator):
 
     def __init__(
         self,
-        x_dim: int,
+        input_dim: int,
+        original_dim: Optional[tuple],
         total_iterations: int,
         diffusion_model: torch.nn.Module,
         diffusion_process: DiffusionProcess,
@@ -49,17 +49,20 @@ class DiffusionVpOperator(Operator):
         self.init_seed = init_seed
         self.device = device
         self.diffusion_model = diffusion_model.to(device)
+        self.mask = mask
 
         # Instantiate data preprocessing pipeline
-        self.preproc = DataProcessingPipeline(x_dim=x_dim)
+        self.preproc = DataProcessingPipeline(x_dim=input_dim, original_shape=original_dim)
 
         # Instantiate diffusion FWI pipeline
         self.pipeline = DiffusionFWIPipeline(
             diffusion_model=self.diffusion_model,
+            diffusion_process=diffusion_process,
             data_pipeline=self.preproc,
             update_fn=update_fn,
             device=self.device,
         )
+        logging.info("(diffusionfwi) Diffusion FWI Pipeline initialized with device: {}".format(device))
 
         # Set up interleaving scheduling
         self.set_scheduling(total_iterations=total_iterations, **(scheduling_args or {}))
@@ -116,9 +119,11 @@ class DiffusionVpOperator(Operator):
         self.t_starts = iter(t_starts)
         self.alphas = iter(alphas)
 
-        logging.info("Setting scheduling to: {}".format(iters_to_run))
-        logging.info("t_starts: {}".format(t_starts))
-        logging.info("alphas: {}".format(alphas))
+        
+        logging.info("(diffusionfwi) Setting diffusion interleaving scheduling")
+        logging.info("(diffusionfwi) Diffusion iters_to_run: {}".format(iters_to_run))
+        logging.info("(diffusionfwi) Diffusion t_starts: {}".format(t_starts))
+        logging.info("(diffusionfwi) Diffusion alphas: {}".format(alphas))
 
     def forward(self, vp, **kwargs):
         #  Increment iteration counter
@@ -130,14 +135,16 @@ class DiffusionVpOperator(Operator):
             t_start = next(self.t_starts)
             alpha = next(self.alphas)
 
-            logging.info("Starting diffusion FWI pipeline")
+            logging.info("(diffusionfwi) Starting diffusion FWI pipeline")
 
             logging.info(
                 "\t Triggering diffusion at iteration {}"
                 " with t_start={} and alpha={}".format(self.iteration, t_start, alpha)
             )
 
-            update_kwargs.update({"alpha": alpha})
+            # Kwargs that will be passed to the update function in the pipeline, if needed
+            update_kwargs = kwargs.get("update_kwargs", {})
+            update_kwargs.update({"alpha": alpha, "mask": self.mask})
 
             # Rewrite vp.data in-place with the output of the diffusion pipeline
             with torch.no_grad():
