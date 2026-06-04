@@ -38,3 +38,12 @@ slurm*.err
 slurm*.out
 mosaic-workspace/
 stride-output.log
+
+# FWI Project specific
+debug_scripts/
+test_scripts/
+Paper_plots.ipynb
+guidance_comparison.png
+models/
+*brains.txt
+.ipynb_checkpoints/

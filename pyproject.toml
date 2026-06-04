@@ -7,5 +7,5 @@ name = "diffusionfwi"
 version = "0.1.0"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["final_src"]
 include = ["diffusionfwi*"] # This ensures it picks up the package and submodules
