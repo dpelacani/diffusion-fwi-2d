@@ -7,17 +7,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import Image, display
 
+from fwi_experiments import BASE_FWI
 
-def plot_vp_and_wavelet(data_dir, max_freqs=None, max_iter=96):
+def plot_vp_and_wavelet(model="vp_996782", max_iter=72):
     """
     Plot the velocity model and the wavelet with the shots locations.
 
     Args:
-        data_dir: Directory containing the acquisition and model files.
-        max_freqs: String of the maximum frequencies for the inverse process.
         max_iter: Iteration number for the velocity model file.
     """
-    acquisition_raw = f"{data_dir}/anastasio2D-Acquisitions.h5"
+    acquisition_raw = f"{BASE_FWI["input_dir"]}/anastasio2D-Acquisitions.h5"
 
     with h5py.File(acquisition_raw, "r") as f:
         source_wavelets = f["shots"]["0"]["wavelets"]["data"][0]

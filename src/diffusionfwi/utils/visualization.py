@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import torch
 
+from diffusionfwi.constants import WATER_FILL
 
 def visualize_data(x):
     """
@@ -70,7 +71,7 @@ def plot_batch(
     from torchvision.utils import make_grid
 
     ncols = batch.size(0) // nrow + (batch.size(0) % nrow > 0)
-    grid = make_grid(batch.cpu(), nrow=nrow, normalize=True)
+    grid = make_grid(batch.cpu(), nrow=nrow, normalize=True, value_range=(WATER_FILL, 1.0))
     plt.figure(figsize=(5 * nrow, 5 * ncols))
     plt.imshow(grid[0], cmap=cmap, vmin=vmin, vmax=vmax)
     plt.axis("off")

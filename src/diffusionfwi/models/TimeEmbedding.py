@@ -10,7 +10,7 @@ class SinusoidalPosEmb(nn.Module):
     The embeddings are computed using sine and cosine functions.
 
     Args:
-        dim: The dimension of the embedding.
+        dim: Dimension of the embedding.
     """
 
     def __init__(self, dim):
@@ -24,7 +24,7 @@ class SinusoidalPosEmb(nn.Module):
             torch.arange(half_dim, device=device) * -(np.log(10000.0) / half_dim)
         )
         emb = time[:, None] * emb[None, :]
-        # combine sine and cosine embeddings
+        # Combine sine and cosine embeddings
         emb = torch.stack((emb.sin(), emb.cos()), dim=-1)  # (B, half_dim, 2)
         emb = emb.view(len(time), self.dim)
         return emb
@@ -36,8 +36,8 @@ class TimeEmbedding(nn.Module):
     This module aims to encode the time step information into a higher-dimensional space, making it learnable by the model.
 
     Args:
-        dim: The dimension of the embedding.
-        hidden_dim: The dimension of the hidden layer in the MLP.
+        dim: Dimension of the embedding.
+        hidden_dim: Dimension of the hidden layer in the MLP.
     """
 
     def __init__(self, dim, hidden_dim=512):

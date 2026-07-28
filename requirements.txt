@@ -8,12 +8,16 @@ nibabel
 imageio
 h5py
 scikit-learn
+scikit-image
 seaborn
 tqdm
+torch
 torchinfo
 torchvision
 lpips
 torchmetrics
 torcheval
 pytorch-ignite
+huggingface_hub
+wandb
 pytest

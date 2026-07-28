@@ -1,2 +1,6 @@
-from .buildDataset import *
+from .buildDataset import (
+    build_dataset, build_augm_reference_dataset, 
+    UltrasoundDataset, postprocess_vp,
+    AcousticNormalization, ReverseAcousticNormalization
+)
 from .dataloader import get_dataloaders

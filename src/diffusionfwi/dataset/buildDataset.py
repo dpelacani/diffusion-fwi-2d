@@ -1,11 +1,20 @@
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset, random_split, TensorDataset
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, TensorDataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
+from diffusionfwi.constants import VMIN, SKULL_THRESH_MS, WATER_FILL
+
+# Augmentation parameters
+AUG_SOFT_TISSUE_SHIFT = (-50.0, 50.0) # m/s, applied before normalization
+AUG_SKULL_SHIFT       = (-300.0, 300.0) # m/s, applied before normalization
+AUG_ROTATION_DEGREES  = 5.0
+AUG_SCALE_X           = (1.0, 1.1)
+AUG_SCALE_Y           = (1.0, 1.1)
 
 class UltrasoundDataset(Dataset):
     """
@@ -17,31 +26,23 @@ class UltrasoundDataset(Dataset):
         x_dim: Dimension to which images will be resized (x_dim x x_dim).
         true_model_name: Filename of the true model to exclude from the dataset (e.g., 'vp_1234.npy').
     """
-
-    def __init__(self, data_dir, x_dim, true_model_name=None):
+    def __init__(self, data_dir, x_dim, transform=None, true_model_name=None):
         self.data_dir = data_dir
-        self.file_list = sorted(
-            [
-                f
-                for f in os.listdir(data_dir)
-                if f.endswith(".npy") and f != true_model_name
-            ]
-        )
-        self.transform = transforms.Compose(
-            [
-                # use anitialias = True to avoid aliasing artifacts
-                transforms.Resize(
-                    (x_dim, x_dim),
-                    interpolation=InterpolationMode.BILINEAR,
-                    antialias=True,
-                ),
-                # apply the log transformation
-                AcousticNormalization(),
-                # normalize to -1 to 1 range
-                transforms.Normalize(mean=[0.5], std=[0.5]),
-            ]
+        self.file_list = sorted([
+            f for f in os.listdir(data_dir)
+            if f.endswith(".npy")
+            and f != true_model_name
+        ])
+
+        self.resize = transforms.Resize(
+            (x_dim, x_dim),
+            interpolation=InterpolationMode.BILINEAR,
+            antialias=True,
         )
 
+        # Additional transformations (normalization and augmentation)
+        self.transform = transform
+       
     def __len__(self):
         return len(self.file_list)
 
@@ -55,6 +56,7 @@ class UltrasoundDataset(Dataset):
         file_path = os.path.join(self.data_dir, self.file_list[idx])
         image = np.load(file_path)
         image = torch.from_numpy(image).float().unsqueeze(0)
+        image = self.resize(image)
         if self.transform:
             image = self.transform(image)
         return image
@@ -86,7 +88,6 @@ class UltrasoundDataset(Dataset):
         plt.grid(True)
         plt.show()
 
-
 class AcousticNormalization(object):
     """
     Normalize the tensor using a logarithmic transformation.
@@ -94,8 +95,9 @@ class AcousticNormalization(object):
     Args:
         tensor: Input tensor to be normalized.
     """
-
     def __call__(self, tensor):
+        # Clamp to prevent artifacts from bilinear interpolation
+        tensor = torch.clamp(tensor, min=VMIN)
         # Normalize the tensor to a range of about [0.5, 1]
         tensor = tensor / 3000.0
         # Apply a logarithmic transformation to compress the range
@@ -104,7 +106,6 @@ class AcousticNormalization(object):
         tensor = torch.clamp(tensor, min=1e-6)
         tensor = torch.log(tensor) + 1.0
         return tensor
-
 
 class ReverseAcousticNormalization(object):
     """
@@ -120,6 +121,99 @@ class ReverseAcousticNormalization(object):
         # Reverse the normalization
         tensor = tensor * 3000.0
         return tensor
+
+
+class VelocityShift(object):
+    """
+    Apply independent random shifts to soft tissue and skull regions.
+    Shifts are uniformly sampled and applied before normalization (in m/s).
+    
+    Args:
+        tensor: Input tensor with velocities in m/s. 
+        soft_tissue_range: (min, max) shift range for soft tissue in m/s.
+        skull_range: (min, max) shift range for skull in m/s.
+        skull_threshold: Velocity threshold in m/s to separate skull from soft tissue.
+    """
+    def __init__(self, soft_tissue_range=(-30.0, 30.0), skull_range=(-300.0, 300.0),
+                 skull_threshold = 1650.0):
+        self.soft_tissue_range = soft_tissue_range
+        self.skull_range = skull_range
+        self.skull_threshold = skull_threshold
+
+    def __call__(self, tensor):
+        # Tensor shape [1, H, W] before normalization
+        water_mask = tensor == 1480.0
+        skull_mask = tensor > self.skull_threshold
+        soft_tissue_mask = (~skull_mask) & (~water_mask)
+
+        skull_shift = torch.FloatTensor(1).uniform_(*self.skull_range).item()
+        soft_tissue_shift = torch.FloatTensor(1).uniform_(*self.soft_tissue_range).item()
+        
+        shifted = tensor.clone()
+        shifted[skull_mask] += skull_shift
+        shifted[soft_tissue_mask] += soft_tissue_shift
+        return shifted
+
+
+class RandomRotation(object):
+    """
+    Apply random rotation and fill borders with water value.
+    """
+    def __init__(self, degrees=20.0, fill=0.0):
+        self.degrees = degrees
+        self.fill = fill
+
+    def __call__(self, tensor):
+        angle = torch.FloatTensor(1).uniform_(-self.degrees, self.degrees).item()
+        
+        rotated = transforms.functional.rotate(
+            tensor, angle, interpolation=InterpolationMode.BILINEAR, fill=[0.0])
+        
+        ones = torch.ones_like(tensor)
+        border_mask = transforms.functional.rotate(
+            ones, angle, interpolation=InterpolationMode.BILINEAR, fill=[0.0])
+        
+        rotated[border_mask < 0.999] = self.fill
+        return rotated
+
+class RandomScaling(object):
+    """
+    Apply independent random scaling along x and y axes. 
+    Scaling factors are uniformly sampled.
+
+    Args:
+        tensor: Input tensor with normalized velocities.
+        scale_x: (min, max) scale range for horizontal axis.
+        scale_y: (min, max) scale range for vertical axis.
+        fill: Value to fill in border regions (normalized water velocity)
+    """
+    def __init__(self, scale_x=(1.0, 1.15), scale_y=(1.0, 1.15), fill=0.0):
+        self.scale_x = scale_x
+        self.scale_y = scale_y
+        self.fill = fill 
+
+    def __call__(self, tensor):
+        # Tensor shape [1, H, W] with normalized velocities
+        sx = torch.FloatTensor(1).uniform_(*self.scale_x).item()
+        sy = torch.FloatTensor(1).uniform_(*self.scale_y).item()
+        
+        # Affine scaling matrix for sample grid 
+        scaling_mat = torch.tensor([
+            [sx, 0.0, 0.0],
+            [0.0, sy, 0.0] 
+        ], dtype=torch.float32).unsqueeze(0)
+
+        grid = F.affine_grid(scaling_mat, tensor.unsqueeze(0).shape, align_corners=False)
+        scaled = F.grid_sample(tensor.unsqueeze(0), grid, mode="bilinear", 
+                            padding_mode="zeros", align_corners=False).squeeze(0)
+        
+        # Create mask for border pixels to fill with constant value
+        ones = torch.ones_like(tensor)
+        border_mask = F.grid_sample(ones.unsqueeze(0), grid, mode="bilinear",
+                            padding_mode="zeros", align_corners=False).squeeze(0)
+
+        scaled[border_mask < 0.999] = self.fill
+        return scaled 
 
 
 def load_true_model(data_dir, true_model, transform=None):
@@ -155,9 +249,8 @@ def add_true_model_to_val(val_dataset, true_model_tensor):
     Returns:
         A new validation dataset that includes the true model image.
     """
-    # Add the true model image to the validation dataset
     val_tensors = [val_dataset[i] for i in range(len(val_dataset))]
-    # add the true model to the validation dataset
+    # Add the true model to the validation dataset
     val_tensors.append(true_model_tensor)
 
     new_val_tensor = torch.stack(val_tensors)
@@ -165,30 +258,24 @@ def add_true_model_to_val(val_dataset, true_model_tensor):
 
     return new_val_dataset
 
+def _save_split(file_list, indices, train_len, val_len, true_model, save_dir):
+    """ Write train/val/test filenames to .txt files """
+    os.makedirs(save_dir, exist_ok=True)
+    splits = {
+        "train": indices[:train_len],
+        "val":   indices[train_len:train_len + val_len],
+        "test":  indices[train_len + val_len:],
+    }
+    for name, idxs in splits.items():
+        with open(os.path.join(save_dir, f"{name}_split.txt"), "w") as f:
+            f.write(f"# {name}: {len(idxs)} samples\n")
+            if true_model:
+                f.write(f"# excluded (true model): {true_model}\n")
+            for i in idxs:
+                f.write(file_list[i] + "\n")
 
-def split_dataset(dataset, train_size=0.8, val_size=0.1):
-    """
-    Split the dataset into training, validation, and test sets.
-    By default, the training set will contain 80% of the data, validation set 10%, and test set 10%.
-
-    Args:
-        dataset: The full dataset to be split.
-        train_size: Proportion of the dataset to include in the training set.
-        val_size: Proportion of the dataset to include in the validation set.
-
-    Returns:
-        A tuple containing the training, validation, and test datasets.
-    """
-    total_size = len(dataset)
-    train_len = (
-        int(total_size * train_size) + 1
-    )  # add 1 because we abandon the true model
-    val_len = int(total_size * val_size)
-    test_len = total_size - train_len - val_len
-    return random_split(dataset, [train_len, val_len, test_len])
-
-
-def build_dataset(data_dir, true_model=None, x_dim=256):
+def build_dataset(data_dir, true_model=None, x_dim=128, 
+                  augment=None, save_split_dir=None):
     """
     Build the dataset for training, validation, and testing.
 
@@ -196,19 +283,136 @@ def build_dataset(data_dir, true_model=None, x_dim=256):
         data_dir: Directory where the dataset is located.
         true_model: Filename of the true model (e.g., 'vp_1234.npy').
         x_dim: Dimension to which images will be resized (x_dim x x_dim).
+        augment: Data augmentation mode. 
+                 None (no augmentation), "flip" (horizontal flip only) 
+                 or "full" (flip + rotation + scaling + velocity shift)
 
     Returns:
         A tuple containing the training, validation, and test datasets.
     """
-    # Build the dataset
-    dataset = UltrasoundDataset(
-        data_dir=data_dir, x_dim=x_dim, true_model_name=true_model
+
+    transform = transforms.Compose([
+        AcousticNormalization(), # apply log transformation
+        transforms.Normalize(mean=[0.5], std=[0.5]) 
+    ])
+
+    if augment == "flip":
+        train_transform = transforms.Compose([
+            AcousticNormalization(),
+            transforms.Normalize(mean=[0.5], std=[0.5]),
+            transforms.RandomHorizontalFlip(p=0.5)
+        ])
+    elif augment == "full":
+        train_transform = transforms.Compose([
+            VelocityShift(
+               soft_tissue_range=AUG_SOFT_TISSUE_SHIFT,
+               skull_range=AUG_SKULL_SHIFT,
+               skull_threshold=SKULL_THRESH_MS
+            ),
+            AcousticNormalization(),
+            transforms.Normalize(mean=[0.5], std=[0.5]),
+            transforms.RandomHorizontalFlip(p=0.5),
+            RandomRotation(degrees=AUG_ROTATION_DEGREES, fill=WATER_FILL),
+            RandomScaling(scale_x=AUG_SCALE_X, scale_y=AUG_SCALE_Y, fill=WATER_FILL)
+        ])
+    else:
+        train_transform = transform
+
+    train_data = UltrasoundDataset(
+        data_dir=data_dir, x_dim=x_dim, transform=train_transform, 
+        true_model_name=true_model
     )
-    # Split the dataset
-    train_dataset, val_dataset, test_dataset = split_dataset(dataset)
+
+    val_test_data = UltrasoundDataset(
+        data_dir=data_dir, x_dim=x_dim, transform=transform, 
+        true_model_name=true_model
+    )
+    
+    # Use fixed index split for reproducibility across global seeds
+    n = len(train_data)
+    train_len = int(n * 0.8) + 1
+    val_len = int(n * 0.1)
+    test_len = n - train_len - val_len
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(42)).tolist()
+    
+    train_dataset = torch.utils.data.Subset(train_data, indices[:train_len])
+    val_dataset = torch.utils.data.Subset(val_test_data, indices[train_len:train_len+val_len])
+    test_dataset = torch.utils.data.Subset(val_test_data, indices[train_len+val_len:])
+    
+    if save_split_dir:
+        _save_split(train_data.file_list, indices, train_len, val_len,
+                    true_model, save_split_dir)
+
     # Load the true model and add it to the validation dataset
     true_model_tensor = load_true_model(
-        data_dir=data_dir, true_model=true_model, transform=dataset.transform
+        data_dir=data_dir, true_model=true_model, transform=transforms.Compose([train_data.resize, transform])
     )
     val_dataset = add_true_model_to_val(val_dataset, true_model_tensor)
+    
     return train_dataset, val_dataset, test_dataset
+
+def build_augm_reference_dataset(data_dir, true_model=None, x_dim=128, num_reps=5, split="val_test"):
+    """
+    Build augmented reference images for evaluating the model learning the fully augmented distribution.
+    Applies the full augmentation transform num_reps times to each val and test image,
+    to produce more robust reference distribution that matches what aug_full was trained on.
+
+    Args:
+        data_dir: data directory path.
+        true_model: filename of the true model to exclude.
+        x_dim: image dimension.
+        num_reps: number of augmented versions per image.
+        split: "val_test" or "train", which index split to apply augmentations to
+
+    Returns:
+        Tensor of shape [len(val_test_indices) * num_reps, 1, H, W] in normalized training space.
+    """
+    augm_transform = transforms.Compose([
+        VelocityShift(
+            soft_tissue_range=AUG_SOFT_TISSUE_SHIFT,
+            skull_range=AUG_SKULL_SHIFT,
+            skull_threshold=SKULL_THRESH_MS,
+        ),
+        AcousticNormalization(),
+        transforms.Normalize(mean=[0.5], std=[0.5]),
+        transforms.RandomHorizontalFlip(p=0.5),
+        RandomRotation(degrees=AUG_ROTATION_DEGREES, fill=WATER_FILL),
+        RandomScaling(scale_x=AUG_SCALE_X, scale_y=AUG_SCALE_Y, fill=WATER_FILL),
+    ])
+
+    augm_data = UltrasoundDataset(
+        data_dir=data_dir, x_dim=x_dim, transform=augm_transform, true_model_name=true_model,
+    )
+
+    # Replicate deterministic split from training dataset creation
+    n = len(augm_data)
+    train_len = int(n * 0.8) + 1
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(42)).tolist()
+    selected_indices = indices[:train_len] if split == "train" else indices[train_len:]
+
+    # Sample num_reps augmented versions of each val and test image
+    # Each access to augm_data[idx] draws fresh random transforms
+    all_images = []
+    for _ in range(num_reps):
+        for idx in selected_indices:
+            all_images.append(augm_data[idx])
+
+    return torch.stack(all_images)
+
+def postprocess_vp(tensor):
+    """
+    Post-process the tensor to reverse the normalization and log transformation, 
+        back to the original pixel values (velocity).
+
+    Args:
+        tensor: Input tensor to post-process.
+
+    Returns:
+        Post-processed tensor.
+    """
+    if isinstance(tensor, np.ndarray):
+        tensor = torch.from_numpy(tensor).float()
+
+    tensor = transforms.Normalize(mean=[-1.0], std=[2.0])(tensor)
+    tensor = ReverseAcousticNormalization()(tensor)
+    return tensor

@@ -1,0 +1,16 @@
+scenario,method,convergence_rate_pct,tissue_rmse_mean_all,tissue_rmse_std_all,ms_ssim_mean_all,ms_ssim_std_all,psnr_mean_all,psnr_std_all
+standard,baseline,37.6,59.3,33.9,0.9239,0.0361,20.15,2.3
+standard,dg,58.4,41.9,33.6,0.9401,0.0327,20.94,2.2
+standard,dg_c,47.7,52.7,44.8,0.9402,0.0168,21.27,1.18
+standard,sg,86.8,20.7,14.7,0.9589,0.0351,22.9,1.9
+standard,sg_c,87.3,33.2,32.3,0.9558,0.0385,23.02,1.87
+reduced_compute,baseline,0.5,87.4,6.0,0.8942,0.0188,17.95,1.16
+reduced_compute,dg,2.0,85.4,11.3,0.906,0.0196,18.45,1.3
+reduced_compute,dg_c,86.3,20.7,10.8,0.9408,0.0213,20.99,1.43
+reduced_compute,sg,80.2,27.8,21.2,0.9396,0.0434,21.64,2.18
+reduced_compute,sg_c,81.7,39.0,18.1,0.9341,0.0355,22.18,1.69
+missing_low_freq,baseline,0.0,87.6,4.1,0.8918,0.0186,17.81,1.06
+missing_low_freq,dg,0.0,87.0,4.2,0.9084,0.0185,18.53,1.2
+missing_low_freq,dg_c,39.1,30.8,15.0,0.9254,0.0262,20.16,1.57
+missing_low_freq,sg,6.1,80.7,20.0,0.9054,0.0388,19.23,1.7
+missing_low_freq,sg_c,3.0,126.7,33.5,0.8957,0.034,19.41,1.77

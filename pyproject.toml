@@ -5,7 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diffusionfwi"
 version = "0.1.0"
+description = "Diffusion-guided full-waveform inversion for brain ultrasound imaging"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-where = ["final_src"]
-include = ["diffusionfwi*"] # This ensures it picks up the package and submodules
+where = ["src"]
+include = ["diffusionfwi*"]

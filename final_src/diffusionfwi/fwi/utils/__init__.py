@@ -1,1 +1,0 @@
-from .npy2h5 import npy2h5

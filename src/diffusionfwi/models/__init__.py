@@ -1,4 +1,3 @@
-from .Attention import AttentionBlock
+from .UNet import UNet
 from .TimeEmbedding import TimeEmbedding
 from .UNetBlocks import ConvBlock, Encoder, Decoder
-from .UNet import *

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 
-# Define Convolutional Block
 class ConvBlock(nn.Module):
     """
     Convolutional Block with two convolutional layers, group normalization, and time embedding.
@@ -24,7 +23,7 @@ class ConvBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
         self.time_emb2 = nn.Linear(time_emb_dim, out_channels)
         self.gn2 = nn.GroupNorm(8, out_channels)
-        # only need to apply residual connection if in_channels != out_channels
+        # Only need to apply residual connection if in_channels != out_channels
         if in_channels != out_channels:
             self.residual_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         else:
@@ -49,11 +48,11 @@ class ConvBlock(nn.Module):
         return x + res
 
 
-# Define the encoder
 class Encoder(nn.Module):
     """
     Encoder block that applies two convolutional blocks followed by a max pooling layer.
-    This is a basic block for U-Net. It downsamples the input while extracting features. With the skip connection, it allows the decoder to access high-resolution features.
+    This is a basic block for U-Net. It downsamples the input while extracting features. 
+    With the skip connection, it allows the decoder to access high-resolution features.
 
     Args:
         in_channels: Number of input channels.
@@ -77,7 +76,6 @@ class Encoder(nn.Module):
         return h, p  # return the skip connection and pooled output
 
 
-# Define the decoder
 class Decoder(nn.Module):
     """
     Decoder block that applies a transposed convolution followed by two convolutional blocks.
@@ -93,8 +91,6 @@ class Decoder(nn.Module):
     def __init__(self, in_channels, out_channels, time_emb_dim, dropout=0.0):
         super(Decoder, self).__init__()
         self.up = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
-        # Consider using skip connections
-        # to combine features from the encoder
         self.conv1 = ConvBlock(
             out_channels * 2, out_channels, time_emb_dim, dropout=dropout
         )
